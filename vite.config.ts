@@ -4,6 +4,10 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'jsdom', // 必须设置为 jsdom 或 happy-dom 才能模拟 DOM 环境
+    globals: true,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
