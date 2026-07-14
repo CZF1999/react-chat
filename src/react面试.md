@@ -1,16 +1,17 @@
 1、React组件生命周期：挂载：这是组件首次被创建并插入DOM阶段。
-更新：当组件的props、state或者父组件重新渲染时。
-卸载: 当组件从DOM中移除时。
-useEffect(()=>{ },[]),这样就会在组件挂载时执行一次
-useEffect(()=>{ },[count]),这样就会在count改变时执行一次
-useEffect(()=>{ return () => { } },[count]),返回一个函数，该函数会在组件 卸载/下次执行 前时执行
+                    更新：当组件的props、state或者父组件重新渲染时。
+                    卸载: 当组件从DOM中移除时。
+                    useEffect(()=>{}),这样相当于update，每次更新都会执行
+                    useEffect(()=>{ },[]),这样就会在组件挂载时执行一次
+                    useEffect(()=>{ },[count]),这样就会在count改变时执行一次
+                    useEffect(()=>{ return () => { } },[count]),返回一个函数，该函数会在组件 卸载/下次执行 前时执行
 2、React的组件通信方式：父组件向子组件传递数据：props，回调函数向父组件传递数据
-使用refs调用子组件暴露的方法
-使用context组件间通信
-使用redux/zustang组件间通信
-3、state和props的区别：state是组件内部数据，props是组件外部数据
+                    使用refs调用子组件暴露的方法
+                    使用context组件间通信
+                    使用redux/zustang组件间通信
+                    3、state和props的区别：state是组件内部数据，props是组件外部数据
 4、内置hooks：useState, useEffect, useContext, useReducer, useCallback, useMemo, useRef, useImperativeHandle, useLayoutEffect, useDebugValue
-5、useEffect和useLayoutEffect的区别：useEffect在DOM更新之后异步执行，useLayoutEffect是同步执行
+5、useEffect和useLayoutEffect的区别：useEffect在DOM更新之后异步执行，useLayoutEffect是在DOM更新之后同步执行
 6、受控组件指表单元素的值受React状态state的控制，非受控组件指表单元素值不受React状态state控制
 
 fiber架构是react16重写的调和引擎，核心是让渲染过程可中断、可恢复，解决长任务阻塞页面的问题
@@ -73,3 +74,16 @@ Diff 算法部分（可以分层回答，先讲规则再讲移动）
 
 虚拟DOM是真实DOM的JS对象抽象表示，React在内存中维护一颗虚拟DOM树，最后批量应用到真实DOM上
 减少直接DOM操作，高效的diff策略，fiber架构，
+
+fiber架构是react16重写调和引擎，主要目的是在渲染阶段可中断、可恢复，避免递归同步渲染时阻塞主线程
+主要有两个阶段，render阶段和commit阶段。render阶段，在内存中执行diff，生成新的fiber树，并执行副作用增删改，这个阶段可以被时间切片打断
+commit阶段，将render阶段生成的fiber树应用到真实DOM上，这个阶段不能被时间切片截断
+为了实现可中断，fiber把组件树转换成由child,sibling,return指针连接的单链表结构。
+react用一个循环来遍历这些工作单元，每执行完一个节点就检查一下是否还有剩余时间，没时间了就暂停，把主线程让给浏览器
+优先级与并发 基于fiber,react实现优先级调度。高优任务如用户输入可打断低优任务，
+Diff算法部分
+在render阶段，react使用diff算法来比较新旧fiber树，核心策略有三条：
+只比较同级节点，跨层级移动直接销毁重建。节点类型不同，直接卸载旧子树，挂载新子树
+通过key来标识子节点，达到最大复用
+对于子节点数组的对比，react采用两轮遍历：第一轮：按照顺序同步比较新旧节点，处理没有移动的更新
+第二轮：把剩余旧节点放入一个以key为键的map中，然后遍历剩余节点，通过 key 在 Map 中查找可复用的 Fiber。找到后，会比较旧节点的原始索引和一个叫做 lastPlacedIndex 的变量（初始为 0）。如果旧索引大于等于 lastPlacedIndex，说明这个节点相对顺序没变，原地复用，并更新 lastPlacedIndex；如果旧索引小于 lastPlacedIndex，说明节点需要向右移动，React 会将其标记为插入操作。遍历结束后，Map 里剩下的旧节点全部打上删除标记。”

@@ -20,7 +20,7 @@ const RequireAuth = () => {
   const { asyncRouter, getAsyncRouter } = useAsyncRouterStore();
 
   // 2. 同时获取 URL 中的 token 和 本地存储的 token 进行综合判断
-  const urlToken = searchParams.get("token");
+  const urlToken = searchParams.get("token") || searchParams.get("val");
   const localToken = localStorage.getItem("token");
   const isAuthenticated = !!(urlToken || localToken);
 

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import useBaseConfigStore from "@/store/useBaseConfig";
 import { useDispatch, useSelector } from "react-redux";
-import { getUserInfoByToken } from "@/store/modules/userSlice";
+import { getUserInfoByToken, setUserInfo } from "@/store/modules/userSlice";
 import type { UserInfo } from "@/type/layout";
+import Child from "./child";
 // 假设你配置了 RootState 类型
 import type { RootState, AppDispatch } from "@/store";
+import ChildA from "./child";
 // 自定义 Hook：里面使用 useCallback
 function useAutoSave(data, delay) {
   const save = useCallback(() => {
@@ -41,13 +43,24 @@ function Editor() {
   );
   useEffect(() => {
     dispatch(getUserInfoByToken({ token: token }));
+    dispatch(
+      setUserInfo({
+        bmdm: "1",
+        bmmc: "1",
+        csny: "1",
+        rybh: "1",
+        ryjh: "1",
+        ryxb: "1",
+      }),
+    );
   }, [token, dispatch]);
   // 手动保存按钮的回调：用 useCallback 稳定引用
   const handleManualSave = useCallback(() => {
     save();
     alert("已保存");
     setLocation("编辑器");
-  }, [save]); // save 来自自定义 Hook，依赖稳定时不会导致 Button 重渲染
+  }, []); // save 来自自定义 Hook，依赖稳定时不会导致 Button 重渲染
+
   // 根据 status 渲染不同的 UI
   if (status === "loading") return <div>加载中...</div>;
   if (status === "failed") return <div>错误: {error}</div>;
@@ -59,6 +72,7 @@ function Editor() {
       <textarea value={text} onChange={(e) => setText(e.target.value)} />
       <Button onClick={handleManualSave}>{buttonText}</Button>
       <button onClick={() => setButtonText("保存中...")}>保存</button>
+      <ChildA onSubmit={handleManualSave} />
     </div>
   );
 }

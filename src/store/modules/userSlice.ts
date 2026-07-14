@@ -35,6 +35,7 @@ const userSlice = createSlice({
     initialState,
     reducers: {
         setUserInfo: (state, action) => {
+            console.log('setUserInfo', action.payload)
             state.userInfo = action.payload
         },
         setToken: (state, action) => {

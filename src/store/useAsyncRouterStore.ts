@@ -8,7 +8,7 @@ interface AsyncRouterStore {
 }
 const useAsyncRouterStore = create<AsyncRouterStore>((set) => ({
     asyncRouter: [],
-    setAsyncRouter: () => set(() => ({ asyncRouter: [] })),
+    setAsyncRouter: (asyncRouter) => set(() => ({ asyncRouter })),
     getAsyncRouter: async (params: GetAsyncRouterParams) => {
         const res = await getAsyncRouterAPI(params)
         set(() => ({ asyncRouter: JSON.parse(JSON.parse(res.data.data as string).menu) }))
