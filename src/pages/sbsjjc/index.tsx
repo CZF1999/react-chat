@@ -9,7 +9,7 @@ import type {
   ChartContent,
   SSEDataChunkData,
 } from "@/types/chat";
-import { ChatMessageItem } from "../../components/Chat/ChatMessageItem";
+import { ChatMessageItem } from "@/components/Chat/ChatMessageItem";
 import "./index.css";
 
 let idCounter = 0;

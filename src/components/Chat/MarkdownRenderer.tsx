@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
-import { sanitizeStreamingMarkdown } from '../../utils/sanitizeStreamingMarkdown';
+import { sanitizeStreamingMarkdown } from '@/utils/sanitizeStreamingMarkdown';
 import { MarkdownErrorBoundary } from './ErrorBoundary';
 import { CodeBlock } from './CodeBlock';
 
