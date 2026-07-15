@@ -77,6 +77,7 @@ export type SSEEventType =
   | 'table_data'
   | 'chart_loading'
   | 'chart_data'
+  | 'data_chunk'
   | 'done';
 
 export interface SSEThinkingData {
@@ -108,7 +109,29 @@ export interface SSEChartData {
   config: Record<string, any>;
 }
 
+/** 逐块追加事件（表格逐行 / 图表逐系列） */
+export type DataChunkType = 'table' | 'chart';
+
+export interface SSEDataChunkData {
+  /** 区分表格还是图表的 chunk */
+  chunkType: DataChunkType;
+  /** 0-based chunk 序号 */
+  index: number;
+  /** 可选：总 chunk 数，用于进度指示 */
+  total?: number;
+  // ---- 表格字段（首 chunk index===0 携带 columns） ----
+  columns?: TableColumn[];
+  title?: string;
+  rows?: Record<string, any>[];
+  // ---- 图表字段（首 chunk index===0 携带 chartType + xAxisData） ----
+  chartType?: ChartContent['chartType'];
+  /** 首 chunk 可携带完整 ECharts option（含 yAxis/tooltip/legend 等） */
+  config?: Record<string, any>;
+  series?: Record<string, any>[];
+  xAxisData?: string[];
+}
+
 export interface SSEEvent {
   type: SSEEventType;
-  data: SSEThinkingData | SSETextData | SSETableData | SSEChartData | null;
+  data: SSEThinkingData | SSETextData | SSETableData | SSEChartData | SSEDataChunkData | null;
 }

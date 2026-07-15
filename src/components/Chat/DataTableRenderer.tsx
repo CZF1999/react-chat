@@ -16,12 +16,14 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
   onReady,
 }) => {
   const [phase, setPhase] = useState<'skeleton' | 'expanding' | 'ready'>(
-    isLoading ? 'skeleton' : 'ready'
+    // chunk 模式：首次渲染就有数据 → 直接 ready
+    // 一次性模式（无 loading 骨架屏机制）：直接 ready
+    isLoading && (!data?.data || data.data.length === 0) ? 'skeleton' : 'ready'
   );
 
   useEffect(() => {
     if (!isLoading && phase === 'skeleton') {
-      // 从骨架屏过渡到表格
+      // 一次性模式过渡：骨架屏 → expanding → ready
       const t1 = setTimeout(() => setPhase('expanding'), 100);
       const t2 = setTimeout(() => {
         setPhase('ready');
@@ -32,26 +34,11 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
         clearTimeout(t2);
       };
     }
-  }, [isLoading, phase, onReady]);
-
-  // 处理数据变化：有新数据进来时触发过渡
-  useEffect(() => {
-    if (data && phase === 'ready') {
-      // 数据已就绪，不需要再过渡
-      return;
+    // chunk 模式：有数据到来且正在加载 → 直接显示表格
+    if (isLoading && data?.data && data.data.length > 0 && phase === 'skeleton') {
+      setPhase('ready');
     }
-    if (data && !isLoading && phase === 'skeleton') {
-      const t1 = setTimeout(() => setPhase('expanding'), 50);
-      const t2 = setTimeout(() => {
-        setPhase('ready');
-        onReady?.();
-      }, 450);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
-    }
-  }, [data, isLoading]);
+  }, [isLoading, phase, onReady, data]);
 
   // 防御：columns 或 data 可能为空/残缺
   const columns = data?.columns;
@@ -139,6 +126,20 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
         }
         .data-table-renderer.phase-expanding .data-table-renderer__table {
           opacity: 0.6;
+        }
+        /* 逐行追加动画（chunked streaming） */
+        .data-table-renderer .ant-table-tbody > tr {
+          animation: rowSlideIn 0.35s ease-out both;
+        }
+        @keyframes rowSlideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
         @media (prefers-color-scheme: dark) {
           .data-table-renderer__title {

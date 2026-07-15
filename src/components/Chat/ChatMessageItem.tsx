@@ -12,21 +12,34 @@ interface ChatMessageItemProps {
 /**
  * 渲染单个内容块
  */
-const ContentBlockRenderer: React.FC<{ block: MessageContent }> = ({ block }) => {
+const ContentBlockRenderer: React.FC<{ block: MessageContent; isLoading?: boolean }> = ({
+  block,
+  isLoading,
+}) => {
   switch (block.type) {
     case "text":
       return (
         <MarkdownRenderer
           content={(block as TextContent).text}
-          isStreaming={false}
+          isStreaming={isLoading}
         />
       );
 
     case "table":
-      return <DataTableRenderer data={block as TableContent} />;
+      return (
+        <DataTableRenderer
+          data={block as TableContent}
+          isLoading={isLoading}
+        />
+      );
 
     case "chart":
-      return <DataChartRenderer data={block as ChartContent} />;
+      return (
+        <DataChartRenderer
+          data={block as ChartContent}
+          isLoading={isLoading}
+        />
+      );
 
     default:
       return null;
@@ -74,6 +87,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
                     <ContentBlockRenderer
                       key={`${block.type}_${index}`}
                       block={block}
+                      isLoading={message.isStreaming}
                     />
                   ))}
                 </div>
@@ -97,8 +111,34 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
 
     if (prevMsg.content !== nextMsg.content) return false;
     if (prevMsg.isStreaming !== nextMsg.isStreaming) return false;
-    if (prevMsg.thinkingStages?.length !== nextMsg.thinkingStages?.length) return false;
-    if (prevMsg.contentBlocks?.length !== nextMsg.contentBlocks?.length) return false;
+    if (prevMsg.thinkingStages?.length !== nextMsg.thinkingStages?.length)
+      return false;
+    if (prevMsg.contentBlocks?.length !== nextMsg.contentBlocks?.length)
+      return false;
+
+    // 深度检查 contentBlocks 内部数据变化（chunked streaming 必需）
+    // 当 data_chunk 追加行/系列时，block 数量不变但内部数据变了
+    const prevBlocks = prevMsg.contentBlocks;
+    const nextBlocks = nextMsg.contentBlocks;
+    if (prevBlocks && nextBlocks) {
+      for (let i = 0; i < prevBlocks.length; i++) {
+        const pb = prevBlocks[i];
+        const nb = nextBlocks[i];
+        if (pb.type !== nb.type) return false;
+        if (pb.type === "table") {
+          const pt = pb as TableContent;
+          const nt = nb as TableContent;
+          if (pt.data?.length !== nt.data?.length) return false;
+        }
+        if (pb.type === "chart") {
+          const pc = pb as ChartContent;
+          const nc = nb as ChartContent;
+          const psLen = (pc.config?.series as any[])?.length ?? 0;
+          const nsLen = (nc.config?.series as any[])?.length ?? 0;
+          if (psLen !== nsLen) return false;
+        }
+      }
+    }
 
     return true;
   },

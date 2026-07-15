@@ -48,13 +48,17 @@ export const DataChartRenderer: React.FC<DataChartRendererProps> = ({
   onReady,
 }) => {
   const [phase, setPhase] = useState<'skeleton' | 'expanding' | 'ready'>(
-    isLoading ? 'skeleton' : 'ready'
+    // chunk 模式：首 chunk 就有数据 → 直接 ready
+    isLoading && (!data?.config?.series || (data.config.series as any[]).length === 0)
+      ? 'skeleton'
+      : 'ready'
   );
   const [chartReady, setChartReady] = useState(false);
   const chartRef = useRef<any>(null);
 
   useEffect(() => {
     if (!isLoading && phase === 'skeleton') {
+      // 一次性模式过渡：骨架屏 → expanding → ready
       const t1 = setTimeout(() => setPhase('expanding'), 80);
       const t2 = setTimeout(() => {
         setPhase('ready');
@@ -64,18 +68,12 @@ export const DataChartRenderer: React.FC<DataChartRendererProps> = ({
         clearTimeout(t2);
       };
     }
-  }, [isLoading, phase]);
-
-  useEffect(() => {
-    if (data && !isLoading && phase === 'skeleton') {
-      const t1 = setTimeout(() => setPhase('expanding'), 50);
-      const t2 = setTimeout(() => setPhase('ready'), 500);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
+    // chunk 模式：有 series 数据且正在加载 → 直接显示图表
+    const hasSeries = data?.config?.series && (data.config.series as any[]).length > 0;
+    if (isLoading && hasSeries && phase === 'skeleton') {
+      setPhase('ready');
     }
-  }, [data, isLoading]);
+  }, [isLoading, phase, data]);
 
   // 图表渲染完成后回调
   const handleChartReady = () => {
@@ -117,7 +115,7 @@ export const DataChartRenderer: React.FC<DataChartRendererProps> = ({
             echarts={echarts}
             option={data.config}
             style={{ height: 350, width: '100%' }}
-            notMerge
+            notMerge={false}
             lazyUpdate
             onChartReady={handleChartReady}
             opts={{ renderer: 'canvas' }}

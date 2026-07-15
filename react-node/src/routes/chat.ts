@@ -81,6 +81,8 @@ router.post('/', async (req: Request, res: Response) => {
           delay = 600;
         } else if (event.type === 'table_loading' || event.type === 'chart_loading') {
           delay = 800;
+        } else if (event.type === 'data_chunk') {
+          delay = 400;
         } else if (event.type === 'text') {
           const hasChinese = /[一-鿿]/.test(event.data.content);
           delay = hasChinese ? 50 : 25;

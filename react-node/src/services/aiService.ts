@@ -51,6 +51,23 @@ export interface SSEDoneEvent {
   data: null;
 }
 
+export interface SSEDataChunkEvent {
+  type: 'data_chunk';
+  data: {
+    chunkType: 'table' | 'chart';
+    index: number;
+    total?: number;
+    columns?: { key: string; title: string; dataIndex: string; width?: number }[];
+    title?: string;
+    rows?: Record<string, any>[];
+    chartType?: 'bar' | 'line' | 'pie' | 'scatter';
+    /** 首 chunk 可携带完整 ECharts option（含 yAxis/tooltip/legend 等） */
+    config?: Record<string, any>;
+    series?: Record<string, any>[];
+    xAxisData?: string[];
+  };
+}
+
 export type SSEEvent =
   | SSEThinkingEvent
   | SSETextEvent
@@ -58,6 +75,7 @@ export type SSEEvent =
   | SSETableDataEvent
   | SSEChartLoadingEvent
   | SSEChartDataEvent
+  | SSEDataChunkEvent
   | SSEDoneEvent;
 
 // ==================== Mock 表格数据 ====================
@@ -520,6 +538,108 @@ function* generateTextOnlyFlow(): Generator<SSEEvent> {
 }
 
 /**
+ * 逐块流式演示：表格逐行追加，图表逐系列构建。
+ * 触发关键词：逐行, 追加, chunk, 分块, 逐条, 逐步
+ */
+function* generateChunkedFlow(): Generator<SSEEvent> {
+  // --- Phase 1: 介绍 ---
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在处理您的请求（逐块模式）...' } };
+  yield* generateTextEvents('好的，我将使用**逐块流式**模式展示数据。\n\n');
+  yield* generateTextEvents('> 📦 表格将**逐行追加**，图表将**逐系列构建**——您可以观察数据逐步到达的过程。\n\n');
+  yield { type: 'thinking', data: { stage: 'done', message: '准备就绪' } };
+
+  // --- Phase 2: 逐行表格 ---
+  yield { type: 'thinking', data: { stage: 'processing', message: '正在逐行加载表格数据...' } };
+  yield* generateTextEvents('## 销售数据（逐行加载）\n\n');
+
+  const tableRows = mockSalesTable.data;
+  // Chunk 0: columns + 第一行
+  yield {
+    type: 'data_chunk',
+    data: {
+      chunkType: 'table',
+      index: 0,
+      total: tableRows.length,
+      columns: mockSalesTable.columns,
+      title: mockSalesTable.title,
+      rows: [tableRows[0]],
+    },
+  };
+
+  // Chunk 1..N-1: 每次追加一行
+  for (let i = 1; i < tableRows.length; i++) {
+    yield* generateTextEvents('.'); // 视觉反馈小点
+    yield {
+      type: 'data_chunk',
+      data: {
+        chunkType: 'table',
+        index: i,
+        total: tableRows.length,
+        rows: [tableRows[i]],
+      },
+    };
+  }
+
+  yield* generateTextEvents(' 表格加载完成！✅\n\n');
+  yield { type: 'thinking', data: { stage: 'done', message: '表格加载完成' } };
+
+  // --- Phase 3: 逐系列图表 ---
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在逐步构建图表...' } };
+  yield* generateTextEvents('## 营收对比图表（逐系列构建）\n\n');
+
+  const barConfig = createBarChartConfig();
+  const seriesArray = barConfig.series as Record<string, any>[];
+  const seriesNames = ['营收', '成本', '利润'];
+  const seriesIcons = ['📊', '📉', '💰'];
+
+  // Chunk 0: 完整 ECharts option（只含首个 series，后续 chunk 追加）
+  yield* generateTextEvents(`${seriesIcons[0]} 添加 **${seriesNames[0]}** 数据... `);
+  yield {
+    type: 'data_chunk',
+    data: {
+      chunkType: 'chart',
+      index: 0,
+      total: seriesArray.length,
+      chartType: 'bar',
+      title: '季度营收与利润对比（逐块模式）',
+      // 下发完整 ECharts option（含 yAxis / tooltip / legend / animation）
+      config: { ...barConfig, series: [seriesArray[0]] },
+      xAxisData: ['Q1', 'Q2', 'Q3', 'Q4'],
+      series: [seriesArray[0]],
+    },
+  };
+
+  // Chunk 1..2: 追加后续 series
+  for (let i = 1; i < seriesArray.length; i++) {
+    yield* generateTextEvents(`${seriesIcons[i]} 添加 **${seriesNames[i]}** 数据... `);
+    yield {
+      type: 'data_chunk',
+      data: {
+        chunkType: 'chart',
+        index: i,
+        total: seriesArray.length,
+        series: [seriesArray[i]],
+      },
+    };
+  }
+
+  yield* generateTextEvents(' 图表构建完成！✅\n\n');
+  yield { type: 'thinking', data: { stage: 'done', message: '图表构建完成' } };
+
+  // --- Phase 4: 总结 ---
+  yield* generateTextEvents(
+    '## 总结\n\n' +
+    '以上就是**逐块流式加载**的完整演示：\n\n' +
+    `- **表格**：${tableRows.length} 行数据分 ${tableRows.length} 个 chunk 逐行到达\n` +
+    `- **图表**：${seriesArray.length} 个系列分 ${seriesArray.length} 个 chunk 逐步追加\n\n` +
+    '> 💡 **对比一次性模式**：输入 `分析销售数据` 可以看到同样的数据以完整块方式一次性到达，' +
+    '而逐块模式让用户在首块数据到达后即可开始浏览，无需等待所有数据就绪。\n'
+  );
+
+  yield { type: 'done', data: null };
+}
+
+/**
  * 根据用户消息匹配合适的流式响应
  * @returns SSE 事件生成器
  */
@@ -546,6 +666,11 @@ export function generateStream(message: string): SSEEvent[] {
   // 测试4: JSON 容错（需要在 chat.ts 中配合注入原始文本）
   if (/json.*错误|容错|fallback/.test(lower)) {
     return [...generateJsonFallbackFlow()];
+  }
+
+  // 逐块流式演示（表格逐行 / 图表逐系列）
+  if (/逐行|追加|chunk|分块|逐条|逐步/.test(lower)) {
+    return [...generateChunkedFlow()];
   }
 
   // 匹配包含"markdown"、"渲染" → Markdown 演示
