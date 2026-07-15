@@ -1,16 +1,14 @@
+import { Readable } from 'node:stream';
 import { Router, type Request, type Response } from 'express';
 import { generateStream } from '../services/aiService.js';
 
 const router = Router();
 
-/**
- * 辅助函数：带延迟的异步 sleep
- */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// POST /api/chat - 流式聊天接口
+// POST /api/chat - SSE 流式聊天接口
 router.post('/', async (req: Request, res: Response) => {
   const { message } = req.body as { message?: string };
 
@@ -20,56 +18,63 @@ router.post('/', async (req: Request, res: Response) => {
     return;
   }
 
-  // 设置流式响应头
+  // SSE 响应头
   res.status(200);
-  res.set('Content-Type', 'text/plain; charset=utf-8');
-  res.set('Transfer-Encoding', 'chunked');
-  res.set('X-Content-Type-Options', 'nosniff');
-  res.set('Cache-Control', 'no-cache, no-transform');
+  res.set('Content-Type', 'text/event-stream; charset=utf-8');
+  res.set('Cache-Control', 'no-cache');
+  res.set('Connection', 'keep-alive');
+  res.set('X-Accel-Buffering', 'no'); // 禁用 nginx 缓冲
 
-  // 禁用 Nagle 算法，确保小数据包立即发送
+  // 禁用 Nagle 算法
   if (req.socket) {
     req.socket.setNoDelay(true);
   }
 
   // 生成 token 数组
   const tokens = generateStream(message.trim());
+  console.log(`[chat] 共 ${tokens.length} 个 token，SSE 流式输出`);
 
-  // 检测客户端断开：使用 aborted 事件（客户端主动取消）
-  // 注意：不要使用 req.on('close')，在 Express 5 中它会在请求体解析完成后立即触发
+  // Node.js Readable 流 → pipe 到响应
+  const readable = new Readable({
+    read() { /* 由外部 push 驱动 */ },
+  });
+  readable.pipe(res);
+
+  // 客户端断开检测
   let isAborted = false;
   req.on('aborted', () => {
     isAborted = true;
-    console.log('[chat] 客户端已中止连接');
+    readable.destroy();
+    console.log('[chat] 客户端已中止');
   });
 
-  try {
-    for (let i = 0; i < tokens.length; i++) {
-      // 检查客户端是否已断开
-      if (isAborted || res.writableEnded) {
-        console.log(`[chat] 停止发送 (已发送 ${i}/${tokens.length}, aborted=${isAborted})`);
-        return;
+  // 异步推送 SSE 事件
+  (async () => {
+    try {
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+        if (isAborted) break;
+
+        const batch = tokens.slice(i, i + BATCH_SIZE).join('');
+        // SSE 格式: data: <内容>\n\n
+        readable.push(`data: ${batch}\n\n`);
+
+        const hasChinese = /[一-鿿]/.test(batch);
+        const delayPerChar = hasChinese ? 50 : 25;
+        await sleep(batch.length * delayPerChar);
       }
 
-      // 写入 token 到响应流
-      res.write(tokens[i]);
-
-      // 模拟打字延迟
-      const isChinese = /[一-鿿]/.test(tokens[i]);
-      const delay = isChinese
-        ? 30 + Math.random() * 30   // 中文：30-60ms
-        : 10 + Math.random() * 20;  // 英文/标点：10-30ms
-
-      await sleep(delay);
+      // 发送结束标记
+      if (!isAborted) {
+        readable.push('data: [DONE]\n\n');
+      }
+      readable.push(null);
+      console.log('[chat] SSE 输出完成');
+    } catch (err) {
+      console.error('[chat] SSE 推送错误:', err);
+      readable.destroy(err instanceof Error ? err : new Error(String(err)));
     }
-
-    res.end();
-  } catch (err) {
-    console.error('[chat] 流式发送错误:', err);
-    if (!res.writableEnded) {
-      res.end();
-    }
-  }
+  })();
 });
 
 export default router;

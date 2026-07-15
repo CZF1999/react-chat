@@ -2,7 +2,7 @@
 .sbsjjc-chat {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - 50px);
   max-height: 100vh;
   background: #f5f5f5;
 }
@@ -10,7 +10,7 @@
 /* 顶部标题栏 */
 .sbsjjc-chat__header {
   flex-shrink: 0;
-  padding: 12px 20px;
+  padding: 12px 20px 0 20px;
   background: #fff;
   border-bottom: 1px solid #e8e8e8;
   text-align: center;
@@ -28,6 +28,37 @@
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+}
+
+/* 错误徽章 */
+.sbsjjc-chat__error-badge {
+  display: inline-block;
+  margin-left: 8px;
+  color: #ff4d4f;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+/* 空状态提示 */
+.sbsjjc-chat__empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #999;
+  pointer-events: none;
+}
+
+.sbsjjc-chat__empty p {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.sbsjjc-chat__empty-hint {
+  font-size: 13px !important;
+  color: #bbb;
 }
 
 /* 底部输入区域 */
