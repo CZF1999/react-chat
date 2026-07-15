@@ -117,9 +117,13 @@ const Sbsjjc: React.FC = () => {
                   case 'text': {
                     const textContent = event.data.content as string;
                     // 追加到最后一个 text 块或创建新的
+                    // 注意：必须新建对象，否则 React.memo 浅比较无法检测变化
                     const lastBlock = contentBlocks[contentBlocks.length - 1];
                     if (lastBlock && lastBlock.type === 'text') {
-                      (lastBlock as TextContent).text += textContent;
+                      contentBlocks[contentBlocks.length - 1] = {
+                        type: 'text',
+                        text: (lastBlock as TextContent).text + textContent,
+                      };
                     } else {
                       contentBlocks.push({ type: 'text', text: textContent });
                     }
@@ -211,7 +215,11 @@ const Sbsjjc: React.FC = () => {
                 if (event.type === 'text') {
                   const lastBlock = contentBlocks[contentBlocks.length - 1];
                   if (lastBlock && lastBlock.type === 'text') {
-                    (lastBlock as TextContent).text += event.data.content;
+                    // 新建对象，确保 React.memo 能检测到变化
+                    contentBlocks[contentBlocks.length - 1] = {
+                      type: 'text',
+                      text: (lastBlock as TextContent).text + event.data.content,
+                    };
                   } else {
                     contentBlocks.push({ type: 'text', text: event.data.content });
                   }

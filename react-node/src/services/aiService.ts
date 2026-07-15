@@ -187,38 +187,124 @@ function* generateTextEvents(text: string): Generator<SSEEvent> {
  * 生成完整的演示流（包含思考→文本→表格→图表）
  */
 function* generateDemoFlow(): Generator<SSEEvent> {
-  // 阶段1: 分析问题
+  // ============ 阶段1: 分析问题 ============
   yield { type: 'thinking', data: { stage: 'analyzing', message: '正在理解您的问题...' } };
-  yield* generateTextEvents('好的，我来为您分析相关数据。');
+  yield* generateTextEvents(
+    '好的，我来为您做一份全面的数据分析报告。本次分析涵盖销售数据、用户增长、技术架构建议等多个维度。\n\n' +
+    '## 一、数据概览\n\n' +
+    '在开始详细分析之前，先了解几个核心指标的计算方式：\n\n' +
+    '**利润计算公式**（行内 LaTeX）：\n\n' +
+    '$$P = R - C$$\n\n' +
+    '其中 $P$ 为利润，$R$ 为营收，$C$ 为成本。\n\n' +
+    '> 数据来源：2025年度财务与运营报表。所有金额单位均为人民币（万元），用户数据已脱敏处理。\n\n'
+  );
   yield { type: 'thinking', data: { stage: 'done', message: '问题分析完成' } };
 
-  // 阶段2: 检索数据
-  yield { type: 'thinking', data: { stage: 'searching', message: '正在检索销售数据...' } };
-  yield* generateTextEvents('\n\n首先，让我们看看各季度的销售情况：\n\n');
+  // ============ 阶段2: 检索数据 ============
+  yield { type: 'thinking', data: { stage: 'searching', message: '正在检索销售与用户数据...' } };
+  yield* generateTextEvents(
+    '## 二、销售数据详情\n\n' +
+    '首先让我们看看各季度的销售情况。以下是用 **TypeScript** 编写的数据处理函数：\n\n' +
+    '```typescript\n' +
+    'interface QuarterData {\n' +
+    '  quarter: string;\n' +
+    '  revenue: number;   // 营收（万元）\n' +
+    '  cost: number;      // 成本（万元）\n' +
+    '  profit: number;    // 利润（万元）\n' +
+    '}\n\n' +
+    'function calcGrowthRate(data: QuarterData[]): number[] {\n' +
+    '  return data.map((item, idx, arr) => {\n' +
+    '    if (idx === 0) return 0;\n' +
+    '    const prev = arr[idx - 1].profit;\n' +
+    '    return ((item.profit - prev) / prev) * 100;\n' +
+    '  });\n' +
+    '}\n\n' +
+    '// 计算结果：Q4 环比增长 26.2%\n' +
+    'console.log(calcGrowthRate(quarterlyData));\n' +
+    '```\n\n' +
+    '以及对应的 **Python** 数据分析脚本：\n\n' +
+    '```python\n' +
+    'import pandas as pd\n' +
+    'import numpy as np\n\n' +
+    'def analyze_profit_margin(df: pd.DataFrame) -> dict:\n' +
+    '    """计算各季度利润率及环比变化"""\n' +
+    '    df["margin"] = (df["profit"] / df["revenue"]) * 100\n' +
+    '    df["margin_change"] = df["margin"].diff()\n' +
+    '    return {\n' +
+    '        "avg_margin": df["margin"].mean(),\n' +
+    '        "best_quarter": df.loc[df["margin"].idxmax(), "quarter"],\n' +
+    '        "trend": "上升" if df["margin"].is_monotonic_increasing else "波动"\n' +
+    '    }\n\n' +
+    'result = analyze_profit_margin(sales_df)\n' +
+    'print(f"平均利润率: {result[\'avg_margin\']:.1f}%")\n' +
+    'print(f"最佳季度: {result[\'best_quarter\']}")\n' +
+    '```\n\n' +
+    '处理后的数据表格如下：\n\n'
+  );
   yield { type: 'thinking', data: { stage: 'done', message: '数据检索完成' } };
 
-  // 阶段3: 处理表格数据
+  // ============ 阶段3: 表格渲染 ============
   yield { type: 'thinking', data: { stage: 'processing', message: '正在整理表格数据...' } };
   yield { type: 'table_loading', data: { message: '正在生成销售数据表格...' } };
   yield { type: 'thinking', data: { stage: 'done', message: '表格数据整理完成' } };
   yield { type: 'table_data', data: mockSalesTable };
 
-  // 阶段4: 生成图表
-  yield* generateTextEvents('\n\n从数据趋势来看，营收和利润都在稳步增长。让我用图表更直观地展示：\n\n');
+  // ============ 阶段4: 图表可视化 ============
+  yield* generateTextEvents(
+    '\n\n## 三、可视化分析\n\n' +
+    '从表格数据可以看出几个关键趋势：\n\n' +
+    '1. **营收持续增长**：Q1 到 Q4 营收从 1,280 万增长至 2,340 万，增幅达 82.8%\n' +
+    '2. **利润率稳定提升**：Q1 利润率约 32.8%，Q4 提升至 45.3%\n' +
+    '3. **成本控制有效**：成本增速（48.8%）远低于营收增速（82.8%）\n\n' +
+    '让我用图表来更直观地展示这些趋势。首先是营收与利润的柱状图对比：\n\n'
+  );
   yield { type: 'thinking', data: { stage: 'generating', message: '正在生成可视化图表...' } };
   yield { type: 'chart_loading', data: { message: '正在生成营收对比图表...' } };
-  yield { type: 'thinking', data: { stage: 'done', message: '图表生成完成' } };
+  yield { type: 'thinking', data: { stage: 'done', message: '营收图表生成完成' } };
   yield { type: 'chart_data', data: { chartType: 'bar', title: '季度营收与利润对比', config: createBarChartConfig() } };
 
-  yield* generateTextEvents('\n\n另外，还可以从用户增长的角度来看：\n\n');
+  yield* generateTextEvents(
+    '\n\n接下来看用户增长的趋势：\n\n' +
+    '用户增长遵循经典的 **AARRR 模型**（海盗指标）：\n\n' +
+    '| 阶段 | 指标 | 当前数据 |\n' +
+    '|------|------|----------|\n' +
+    '| Acquisition | 新增用户/月 | 8,920 |\n' +
+    '| Activation | 日活用户 | 18,200 |\n' +
+    '| Retention | 6月留存率 | 78.4% |\n' +
+    '| Revenue | 月活 ARPU | ¥18.6 |\n' +
+    '| Referral | 邀请率 | 12.3% |\n\n' +
+    '下面是对应的折线趋势图：\n\n'
+  );
   yield { type: 'chart_loading', data: { message: '正在生成用户增长趋势图...' } };
   yield { type: 'chart_data', data: { chartType: 'line', title: '用户增长趋势', config: createLineChartConfig() } };
 
-  yield* generateTextEvents('\n\n以及用户来源的分布情况：\n\n');
+  yield* generateTextEvents(
+    '\n\n用户来源的分布情况如下，可以看出搜索引擎和社交媒体是主要流量入口：\n\n' +
+    '渠道占比的 **基尼系数** 可以用来衡量流量集中度：\n\n' +
+    '$$G = 1 - \\sum_{i=1}^{n} p_i^2$$\n\n' +
+    '计算结果显示出流量来源相对多元化，风险可控。\n\n'
+  );
   yield { type: 'chart_loading', data: { message: '正在生成用户来源分布图...' } };
   yield { type: 'chart_data', data: { chartType: 'pie', title: '用户来源分布', config: createPieChartConfig() } };
 
-  yield* generateTextEvents('\n\n**总结**：从数据可以看出，公司业绩呈现良好的增长态势，Q4利润突破1000万元，同比增长31.2%。用户增长方面，月活用户已突破12万，留存率持续提升至78.4%。');
+  // ============ 阶段5: 总结 ============
+  yield* generateTextEvents(
+    '\n\n## 四、总结与建议\n\n' +
+    '综合以上分析，主要结论如下：\n\n' +
+    '**✅ 优势方面：**\n\n' +
+    '- 营收连续四个季度保持两位数增长，Q4 突破 2,340 万\n' +
+    '- 利润率从 32.8% 提升至 45.3%，成本控制成效显著\n' +
+    '- 用户留存率达到 78.4%，高于行业平均水平（约 60%）\n\n' +
+    '**⚠️ 需要关注：**\n\n' +
+    '- 社交媒体渠道占比下降，需加强社媒运营投入\n' +
+    '- Q3→Q4 新增用户增速放缓（+21.5% vs Q2→Q3 +27.2%）\n\n' +
+    '**📋 行动建议：**\n\n' +
+    '1. 加大 Q4 旺季的市场投放预算\n' +
+    '2. 优化新用户引导流程，目标将 Day-1 留存从 45% 提升至 55%\n' +
+    '3. 启动 SEO 优化专项，提升搜索引擎渠道的转化率\n\n' +
+    '> 💡 **提示**：以上数据为演示数据，实际生产环境中请接入真实数据源。如需定制化分析，可以继续向我提问。\n\n' +
+    '以上就是完整的分析报告，如有疑问欢迎继续交流！'
+  );
   yield { type: 'thinking', data: { stage: 'done', message: '全部内容生成完毕' } };
   yield { type: 'done', data: null };
 }
@@ -238,27 +324,163 @@ function* generateSimpleFlow(message: string): Generator<SSEEvent> {
   if (/你好|hello|hi|嗨/.test(lower)) {
     reply = `你好！👋 很高兴为您服务。
 
+我是 **AI 数据分析助手**，支持以下能力：
+
+| 功能 | 说明 |
+|------|------|
+| 📝 Markdown 渲染 | GFM 表格、代码高亮、LaTeX 公式 |
+| 🧠 思考过程 | 实时展示 AI 分析步骤 |
+| 📊 数据表格 | 骨架屏 → 表格平滑过渡 |
+| 📈 可视化图表 | 柱状图、折线图、饼图（ECharts） |
+| ⚡ 流式输出 | SSE 实时推送，打字机效果 |
+
 您可以尝试问我：
-- **"分析销售数据"** — 查看表格和图表演示
-- **"对比数据"** — 查看多维度数据分析
+- **"分析销售数据"** — 查看完整的分析报告演示
+- **"markdown 演示"** — 查看 Markdown 渲染能力
 - 任何其他问题我也会尽力回答！`;
   } else if (/帮助|help/.test(lower)) {
     reply = `我是 AI 数据分析助手，支持以下功能：
 
-1. **文本对话** — 流式输出，打字机效果
-2. **思考过程** — 展示 AI 的分析步骤
-3. **表格展示** — 从骨架屏平滑过渡到数据表格
-4. **图表可视化** — 柱状图、折线图、饼图等
+## 核心能力
 
-试试发送 **"分析销售数据"** 来看看完整演示！`;
+1. **文本对话** — 流式输出，打字机效果
+2. **思考过程** — 展示 AI 的分析步骤（分析→检索→处理→生成）
+3. **表格展示** — 从骨架屏平滑过渡到数据表格
+4. **图表可视化** — 柱状图、折线图、饼图，带入场动画
+
+## 使用方式
+
+试试发送以下关键词来体验：
+
+| 关键词 | 效果 |
+|--------|------|
+| **"分析销售数据"** | 完整报告（Markdown + 表格 + 图表） |
+| **"markdown 演示"** | 测试 Markdown 渲染能力 |
+| **"图表"** | 查看多种图表类型 |
+| **"对比"** | 用户数据对比分析 |
+
+> 💡 这是一个演示项目，后端使用 mock 数据模拟 AI 响应。`;
+  } else if (/markdown|渲染/.test(lower)) {
+    reply = `好的，让我展示一下支持的 Markdown 格式！
+
+## 标题层级
+
+### 三级标题
+
+#### 四级标题
+
+---
+
+## 文本样式
+
+**粗体文字**、*斜体文字*、~~删除线~~、\`行内代码\`
+
+## 代码块
+
+\`\`\`typescript
+// TypeScript 泛型示例
+interface ApiResponse<T> {
+  code: number;
+  data: T;
+  message: string;
+}
+
+async function fetchData<T>(url: string): Promise<ApiResponse<T>> {
+  const res = await fetch(url);
+  return res.json();
+}
+\`\`\`
+
+\`\`\`python
+# Python 数据处理
+from typing import List, Dict
+
+def group_by_category(
+    items: List[Dict], key: str
+) -> Dict[str, List[Dict]]:
+    result = {}
+    for item in items:
+        k = item.get(key, "other")
+        result.setdefault(k, []).append(item)
+    return result
+\`\`\`
+
+## 数学公式（LaTeX）
+
+行内公式：勾股定理 $a^2 + b^2 = c^2$
+
+块级公式：
+
+$$
+\\int_{a}^{b} f(x)\\,dx = F(b) - F(a)
+$$
+
+矩阵表示：
+
+$$
+\\begin{pmatrix}
+a_{11} & a_{12} & a_{13} \\\\
+a_{21} & a_{22} & a_{23} \\\\
+a_{31} & a_{32} & a_{33}
+\\end{pmatrix}
+$$
+
+## 列表
+
+### 有序列表
+
+1. 安装依赖 \`pnpm install\`
+2. 启动开发服务器 \`pnpm dev\`
+3. 打开浏览器访问 \`http://localhost:5173\`
+
+### 无序列表
+
+- React 18 + TypeScript
+- Ant Design 6.x 组件库
+- ECharts 图表渲染
+- Zustand 状态管理
+- react-markdown 富文本渲染
+
+### 任务列表
+
+- [x] 项目初始化
+- [x] SSE 流式输出
+- [x] Markdown 渲染
+- [x] 思考过程展示
+- [x] 表格 / 图表过渡动画
+- [ ] 接入真实 LLM API
+
+## 引用
+
+> 优秀的代码是写给人看的，顺便能被机器执行。
+> — *Structure and Interpretation of Computer Programs*
+
+## 表格
+
+| 技术栈 | 版本 | 用途 |
+|--------|------|------|
+| React | 18.3 | UI 框架 |
+| TypeScript | 6.0 | 类型系统 |
+| Vite | 8.1 | 构建工具 |
+| Ant Design | 6.5 | 组件库 |
+| ECharts | 6.1 | 图表渲染 |
+
+以上就是主要的 Markdown 渲染能力展示！`;
   } else {
     reply = `收到您的问题："${message}"
 
-我目前是演示模式，建议您尝试发送以下关键词来体验完整功能：
+我目前是演示模式，以下是您可以尝试的关键词：
 
-- **"分析销售数据"** 或 **"表格"** — 查看完整的数据分析演示（包含表格和图表）
-- **"对比"** — 查看用户数据对比
-- **"图表"** — 查看可视化图表
+| 关键词 | 效果 |
+|--------|------|
+| **"分析销售数据"** | 完整数据分析报告 |
+| **"markdown 演示"** | Markdown 渲染能力展示 |
+| **"图表"** | 多种图表类型 |
+| **"对比"** | 用户数据对比分析 |
+| **"表格"** | 纯表格演示 |
+| **"你好"** | 功能概览 |
+
+> 💡 试试 **"分析销售数据"** 获得最佳体验！
 
 您想了解哪方面的信息呢？`;
   }
@@ -303,6 +525,11 @@ function* generateTextOnlyFlow(): Generator<SSEEvent> {
  */
 export function generateStream(message: string): SSEEvent[] {
   const lower = message.toLowerCase();
+
+  // 匹配包含"markdown"、"md"、"渲染" → Markdown 演示
+  if (/markdown|md演示|渲染/.test(lower)) {
+    return [...generateSimpleFlow(message)];
+  }
 
   // 匹配包含"分析"、"数据"、"销售"等关键词 → 完整演示
   if (/分析|数据|销售|报表|统计/.test(lower)) {

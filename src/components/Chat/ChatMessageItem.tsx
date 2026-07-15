@@ -12,29 +12,26 @@ interface ChatMessageItemProps {
 /**
  * 渲染单个内容块
  */
-const ContentBlockRenderer: React.FC<{ block: MessageContent }> = React.memo(
-  ({ block }) => {
-    switch (block.type) {
-      case "text":
-        return (
-          <MarkdownRenderer
-            content={(block as TextContent).text}
-            isStreaming={false}
-          />
-        );
+const ContentBlockRenderer: React.FC<{ block: MessageContent }> = ({ block }) => {
+  switch (block.type) {
+    case "text":
+      return (
+        <MarkdownRenderer
+          content={(block as TextContent).text}
+          isStreaming={false}
+        />
+      );
 
-      case "table":
-        return <DataTableRenderer data={block as TableContent} />;
+    case "table":
+      return <DataTableRenderer data={block as TableContent} />;
 
-      case "chart":
-        return <DataChartRenderer data={block as ChartContent} />;
+    case "chart":
+      return <DataChartRenderer data={block as ChartContent} />;
 
-      default:
-        return null;
-    }
+    default:
+      return null;
   }
-);
-ContentBlockRenderer.displayName = "ContentBlockRenderer";
+};
 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
   ({ message }) => {
