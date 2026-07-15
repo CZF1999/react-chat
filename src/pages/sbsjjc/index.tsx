@@ -1,6 +1,13 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import type { ChatMessage } from '@/types/chat';
+import type {
+  ChatMessage,
+  MessageContent,
+  ThinkingStage,
+  TextContent,
+  TableContent,
+  ChartContent,
+} from '@/types/chat';
 import { ChatMessageItem } from '../../components/Chat/ChatMessageItem';
 import './index.css';
 
@@ -20,24 +27,26 @@ const Sbsjjc: React.FC = () => {
     async (input: string) => {
       if (!input.trim() || isStreaming) return;
 
+      const assistantId = generateId();
+
+      // Step 1: 添加用户消息 + 空的 AI 占位消息
       const userMsg: ChatMessage = {
         id: generateId(),
         role: 'user',
         content: input,
         createdAt: Date.now(),
       };
-      const assistantId = generateId();
       const assistantMsg: ChatMessage = {
         id: assistantId,
         role: 'assistant',
         content: '',
+        contentBlocks: [],
+        thinkingStages: [],
         isStreaming: true,
         createdAt: Date.now(),
       };
 
-      // Step 1: 添加用户消息 + 空的 AI 占位消息
       setMessages(prev => [...prev, userMsg, assistantMsg]);
-      // 滚动到底部
       setAtBottom(true);
       setTimeout(() => {
         virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' });
@@ -48,7 +57,10 @@ const Sbsjjc: React.FC = () => {
       abortRef.current = controller;
       setIsStreaming(true);
 
-      let fullText = '';
+      // 追踪当前流式状态
+      const contentBlocks: MessageContent[] = [];
+      const thinkingStages: ThinkingStage[] = [];
+      let pendingLoadingBlock: { type: 'table' | 'chart'; message: string } | null = null;
 
       try {
         const response = await fetch('/api/chat', {
@@ -72,28 +84,118 @@ const Sbsjjc: React.FC = () => {
           const chunk = decoder.decode(value, { stream: true });
           lineBuffer += chunk;
 
-          // 解析 SSE 事件
           const events = lineBuffer.split('\n\n');
           lineBuffer = events.pop() || '';
 
-          let newText = '';
-          for (const event of events) {
-            for (const line of event.split('\n')) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data !== '[DONE]') newText += data;
+          let hasUpdates = false;
+
+          for (const rawEvent of events) {
+            for (const line of rawEvent.split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+
+              const payload = line.slice(6);
+              if (payload === '[DONE]') continue;
+
+              try {
+                const event = JSON.parse(payload) as {
+                  type: string;
+                  data: any;
+                };
+
+                switch (event.type) {
+                  case 'thinking': {
+                    // 添加思考阶段
+                    thinkingStages.push({
+                      type: event.data.stage,
+                      message: event.data.message,
+                      timestamp: Date.now(),
+                    });
+                    hasUpdates = true;
+                    break;
+                  }
+
+                  case 'text': {
+                    const textContent = event.data.content as string;
+                    // 追加到最后一个 text 块或创建新的
+                    const lastBlock = contentBlocks[contentBlocks.length - 1];
+                    if (lastBlock && lastBlock.type === 'text') {
+                      (lastBlock as TextContent).text += textContent;
+                    } else {
+                      contentBlocks.push({ type: 'text', text: textContent });
+                    }
+                    hasUpdates = true;
+                    break;
+                  }
+
+                  case 'table_loading': {
+                    // 记录有一个 pending 的表格
+                    pendingLoadingBlock = { type: 'table', message: event.data.message };
+                    hasUpdates = true;
+                    break;
+                  }
+
+                  case 'table_data': {
+                    // 将 pending 的表格数据填充
+                    const tableBlock: TableContent = {
+                      type: 'table',
+                      columns: event.data.columns,
+                      data: event.data.data,
+                      title: event.data.title,
+                    };
+                    contentBlocks.push(tableBlock);
+                    pendingLoadingBlock = null;
+                    hasUpdates = true;
+                    break;
+                  }
+
+                  case 'chart_loading': {
+                    pendingLoadingBlock = { type: 'chart', message: event.data.message };
+                    hasUpdates = true;
+                    break;
+                  }
+
+                  case 'chart_data': {
+                    const chartBlock: ChartContent = {
+                      type: 'chart',
+                      chartType: event.data.chartType,
+                      title: event.data.title,
+                      config: event.data.config,
+                    };
+                    contentBlocks.push(chartBlock);
+                    pendingLoadingBlock = null;
+                    hasUpdates = true;
+                    break;
+                  }
+
+                  case 'done': {
+                    // 流结束
+                    break;
+                  }
+                }
+              } catch {
+                // JSON 解析失败，当作纯文本处理（兼容旧版）
+                contentBlocks.push({ type: 'text', text: payload });
+                hasUpdates = true;
               }
             }
           }
 
-          if (newText) {
-            fullText += newText;
-            // Step 3: 实时更新 AI 消息内容
+          // 批量更新消息状态
+          if (hasUpdates) {
             setMessages(prev => {
               const idx = prev.findIndex(m => m.id === assistantId);
               if (idx === -1) return prev;
               const updated = [...prev];
-              updated[idx] = { ...updated[idx], content: fullText };
+              updated[idx] = {
+                ...updated[idx],
+                contentBlocks: [...contentBlocks],
+                thinkingStages: [...thinkingStages],
+                // 兼容旧版：content 为所有 text 块的拼接
+                content: contentBlocks
+                  .filter((b): b is TextContent => b.type === 'text')
+                  .map(b => b.text)
+                  .join(''),
+              };
               return updated;
             });
           }
@@ -103,14 +205,27 @@ const Sbsjjc: React.FC = () => {
         if (lineBuffer.trim()) {
           for (const line of lineBuffer.split('\n')) {
             if (line.startsWith('data: ') && line.slice(6) !== '[DONE]') {
-              fullText += line.slice(6);
+              const payload = line.slice(6);
+              try {
+                const event = JSON.parse(payload);
+                if (event.type === 'text') {
+                  const lastBlock = contentBlocks[contentBlocks.length - 1];
+                  if (lastBlock && lastBlock.type === 'text') {
+                    (lastBlock as TextContent).text += event.data.content;
+                  } else {
+                    contentBlocks.push({ type: 'text', text: event.data.content });
+                  }
+                }
+              } catch {
+                contentBlocks.push({ type: 'text', text: payload });
+              }
             }
           }
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
           const errMsg = err instanceof Error ? err.message : String(err);
-          fullText = `❌ 请求失败：${errMsg}`;
+          contentBlocks.push({ type: 'text', text: `❌ 请求失败：${errMsg}` });
         }
       } finally {
         // Step 4: 标记流式完成
@@ -120,7 +235,16 @@ const Sbsjjc: React.FC = () => {
           const idx = prev.findIndex(m => m.id === assistantId);
           if (idx === -1) return prev;
           const updated = [...prev];
-          updated[idx] = { ...updated[idx], content: fullText, isStreaming: false };
+          updated[idx] = {
+            ...updated[idx],
+            contentBlocks: [...contentBlocks],
+            thinkingStages: [...thinkingStages],
+            content: contentBlocks
+              .filter((b): b is TextContent => b.type === 'text')
+              .map(b => b.text)
+              .join(''),
+            isStreaming: false,
+          };
           return updated;
         });
       }
@@ -159,7 +283,10 @@ const Sbsjjc: React.FC = () => {
           <div className="sbsjjc-chat__empty">
             <p>👋 发送一条消息开始对话</p>
             <p className="sbsjjc-chat__empty-hint">
-              支持 Markdown · 代码高亮 · LaTeX · 表格
+              支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表
+            </p>
+            <p className="sbsjjc-chat__empty-hint" style={{ marginTop: 4 }}>
+              试试发送 <b>"分析销售数据"</b> 体验完整演示
             </p>
           </div>
         ) : (
@@ -182,7 +309,7 @@ const Sbsjjc: React.FC = () => {
             ref={inputRef}
             type="text"
             className="sbsjjc-chat__input"
-            placeholder="输入消息... (Enter 发送)"
+            placeholder="输入消息... 试试分析销售数据 (Enter 发送)"
             disabled={isStreaming}
             autoComplete="off"
           />
