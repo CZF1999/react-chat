@@ -526,8 +526,30 @@ function* generateTextOnlyFlow(): Generator<SSEEvent> {
 export function generateStream(message: string): SSEEvent[] {
   const lower = message.toLowerCase();
 
-  // 匹配包含"markdown"、"md"、"渲染" → Markdown 演示
-  if (/markdown|md演示|渲染/.test(lower)) {
+  // ===== 边界测试场景（优先匹配） =====
+
+  // 测试1: 未闭合 Markdown 中断
+  if (/中断.*markdown|markdown.*中断|未闭合|代码块.*中断/.test(lower)) {
+    return [...generateInterruptedMarkdownFlow()];
+  }
+
+  // 测试2: 异常/残缺数据
+  if (/异常.*数据|数据.*异常|残缺|损坏|bad.?data/.test(lower)) {
+    return [...generateBadDataFlow()];
+  }
+
+  // 测试3: loading 后中断
+  if (/加载.*中断|中断.*加载|表格.*中断|loading.*interrupt/.test(lower)) {
+    return [...generateLoadingInterruptedFlow()];
+  }
+
+  // 测试4: JSON 容错（需要在 chat.ts 中配合注入原始文本）
+  if (/json.*错误|容错|fallback/.test(lower)) {
+    return [...generateJsonFallbackFlow()];
+  }
+
+  // 匹配包含"markdown"、"渲染" → Markdown 演示
+  if (/markdown|渲染/.test(lower)) {
     return [...generateSimpleFlow(message)];
   }
 
@@ -603,5 +625,171 @@ function* generateTableFlow(): Generator<SSEEvent> {
   yield { type: 'table_loading', data: { message: '正在生成用户活跃度表格...' } };
   yield { type: 'table_data', data: mockUserTable };
   yield { type: 'thinking', data: { stage: 'done', message: '表格生成完毕' } };
+  yield { type: 'done', data: null };
+}
+
+// ==================== 边界测试场景 ====================
+
+/**
+ * 测试场景1：未闭合 Markdown — 流式输出被中断
+ * 模拟：代码块和公式写到一半突然 stop
+ * 预期：sanitizeStreamingMarkdown 自动补全未闭合的围栏
+ */
+function* generateInterruptedMarkdownFlow(): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在分析问题...' } };
+  yield* generateTextEvents(
+    '下面是一段包含未闭合代码块的 Markdown：\n\n' +
+    '## 中断测试\n\n' +
+    '这段代码演示了异步数据获取：\n\n' +
+    '```typescript\n' +
+    'async function loadData() {\n' +
+    '  const response = await fetch'  // 注意：故意在这里中断，代码块未闭合
+  );
+  yield { type: 'thinking', data: { stage: 'done', message: '分析完成' } };
+
+  // 模拟 LaTeX 公式也写一半
+  yield* generateTextEvents(
+    '\n\n接下来是一个未完成的 LaTeX 公式：\n\n' +
+    '$$\n' +
+    '\\frac{\\partial f}{\\partial t} = '  // 公式未闭合
+  );
+
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在生成更多内容...' } };
+  yield* generateTextEvents(
+    '\n\n再试一个行内公式 $E = mc'  // 行内 $ 未闭合
+  );
+
+  // 正常结束 — 用户点击停止也走 finally 同样的逻辑
+  yield { type: 'done', data: null };
+}
+
+/**
+ * 测试场景2：异常/残缺数据
+ * 模拟：table_data 和 chart_data 缺失关键字段
+ * 预期：DataTableRenderer / DataChartRenderer 显示错误提示而非崩溃
+ */
+function* generateBadDataFlow(): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在分析数据...' } };
+  yield* generateTextEvents('以下是异常数据测试：\n\n');
+  yield { type: 'thinking', data: { stage: 'done', message: '分析完成' } };
+
+  // 场景2a: 表格 — columns 为 null
+  yield { type: 'thinking', data: { stage: 'processing', message: '正在尝试获取表格数据...' } };
+  yield* generateTextEvents('### 表格1：缺少 columns\n\n');
+  yield {
+    type: 'table_data',
+    data: {
+      title: '残缺表格（无 columns）',
+      columns: null as any,
+      data: [{ a: 1 }, { a: 2 }],
+    },
+  };
+
+  // 场景2b: 表格 — data 为 null
+  yield* generateTextEvents('\n\n### 表格2：缺少 data\n\n');
+  yield {
+    type: 'table_data',
+    data: {
+      title: '残缺表格（无 data）',
+      columns: [{ key: 'x', title: 'X', dataIndex: 'x' }],
+      data: null as any,
+    },
+  };
+
+  // 场景2c: 表格 — 完全为空
+  yield* generateTextEvents('\n\n### 表格3：空对象\n\n');
+  yield {
+    type: 'table_data',
+    data: {} as any,
+  };
+
+  // 场景2d: 图表 — config 为 null
+  yield* generateTextEvents('\n\n### 图表1：缺少 config\n\n');
+  yield {
+    type: 'chart_data',
+    data: {
+      chartType: 'bar' as const,
+      title: '残缺图表（无 config）',
+      config: null as any,
+    },
+  };
+
+  // 场景2e: 正常表格（对比）
+  yield* generateTextEvents('\n\n### 正常表格（对比）\n\n');
+  yield {
+    type: 'table_data',
+    data: {
+      title: '正常表格',
+      columns: [{ key: 'ok', title: '状态', dataIndex: 'ok' }],
+      data: [{ ok: '✅ 此表格正常' }],
+    },
+  };
+
+  yield { type: 'thinking', data: { stage: 'done', message: '异常数据测试完毕' } };
+  yield { type: 'done', data: null };
+}
+
+/**
+ * 测试场景3：loading 后中断 — table_loading/chart_loading 后没有对应 data
+ * 模拟：用户中途点击"停止"，table_loading 已发出但 data 没到达
+ * 预期：页面不崩溃，不残留骨架屏
+ */
+function* generateLoadingInterruptedFlow(): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在准备加载数据...' } };
+  yield* generateTextEvents('这个场景模拟加载中断：\n\n');
+  yield { type: 'thinking', data: { stage: 'done', message: '准备完成' } };
+
+  yield* generateTextEvents('正在请求表格数据...\n\n');
+
+  // 发出 table_loading，但后面没有 table_data — 模拟中断
+  yield { type: 'table_loading', data: { message: '正在加载销售数据...' } };
+
+  yield* generateTextEvents('加载过程中用户点击了停止。\n\n');
+
+  yield { type: 'thinking', data: { stage: 'generating', message: '尝试生成图表...' } };
+  yield { type: 'chart_loading', data: { message: '正在加载趋势图...' } };
+
+  // 同样发出 chart_loading 但不发 chart_data
+  yield* generateTextEvents(
+    '图表加载也被中断。以下是最后一段正常文本，演示中断后的状态：\n\n' +
+    '> ⚠️ 以上 loading 事件没有对应的 data 事件，前端应优雅处理。\n\n' +
+    '`pendingLoadingBlock` 是局部变量，不会被渲染。页面不应出现残留骨架屏或报错。'
+  );
+
+  yield { type: 'done', data: null };
+}
+
+/**
+ * 测试场景4：JSON 解析容错 — 混合有效事件和非法数据
+ * 模拟：SSE 流中混入了非 JSON 文本或其他异常
+ * 预期：非法数据降级为纯文本显示，不中断后续解析
+ */
+function* generateJsonFallbackFlow(): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在接收数据流...' } };
+
+  // 正常文本
+  yield* generateTextEvents('这是一条正常的 SSE 文本流。');
+
+  // 直接 push 原始字符串（不是 JSON），会在解析时进入 catch 分支
+  // 注意：generateStream 返回 SSEEvent[]，我们需要借助 chat.ts 的发送逻辑来模拟
+  // 这里 trick：在 text content 中嵌入看起来像损坏 JSON 的内容
+  yield* generateTextEvents(
+    '\n\n下面模拟一段原始 SSE 输出（非 JSON 格式，兼容旧版）：\n\n' +
+    '```\n' +
+    'data: 这是一段原始文本（未包装为 JSON）\n' +
+    'data: {"type":"text","data":{"content":"这是包装后的文本"}}\n' +
+    '```\n\n'
+  );
+
+  // 正常 JSON 事件穿插
+  yield { type: 'thinking', data: { stage: 'done', message: '数据流分析完成' } };
+
+  yield* generateTextEvents(
+    '以上模拟了 JSON 解析容错流程：\n\n' +
+    '- 有效的 JSON 事件 → 正常解析为对应内容块\n' +
+    '- 无效的 JSON → 降级为纯文本显示\n\n' +
+    '> 💡 前端 catch 分支：`contentBlocks.push({ type: "text", text: payload })`'
+  );
+
   yield { type: 'done', data: null };
 }

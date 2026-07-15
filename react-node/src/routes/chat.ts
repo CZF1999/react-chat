@@ -35,6 +35,9 @@ router.post('/', async (req: Request, res: Response) => {
   const events = generateStream(message.trim());
   console.log(`[chat] 共 ${events.length} 个事件，SSE 结构化流式输出`);
 
+  // JSON 容错测试：在事件流中注入原始文本
+  const isJsonFallbackTest = /json.*错误|容错|fallback/.test(message.trim().toLowerCase());
+
   // Node.js Readable 流
   const readable = new Readable({
     read() { /* 由外部 push 驱动 */ },
@@ -51,25 +54,38 @@ router.post('/', async (req: Request, res: Response) => {
   // 异步推送 SSE 事件
   (async () => {
     try {
+      let eventIndex = 0;
       for (const event of events) {
         if (isAborted) break;
 
         // 每个事件以 JSON 格式发送
         const payload = JSON.stringify(event);
         readable.push(`data: ${payload}\n\n`);
+        eventIndex++;
+
+        // JSON 容错测试：在特定位置注入原始非 JSON 文本
+        if (isJsonFallbackTest && eventIndex === 3) {
+          // 注入一条非 JSON 的原始文本（模拟旧版 SSE）
+          await sleep(200);
+          readable.push('data: 这是一段原始文本（未包装为 JSON），用于测试前端 JSON.parse 容错。\n\n');
+          console.log('[chat] 已注入原始文本（JSON 容错测试）');
+          // 再注入一条半损数据
+          await sleep(150);
+          readable.push('data: {"type":"unknown_event","data":{"x":1}\n\n'); // 故意不闭合 JSON
+          console.log('[chat] 已注入不完整 JSON（JSON 容错测试）');
+        }
 
         // 根据事件类型调整延迟，模拟真实场景
         let delay = 30;
         if (event.type === 'thinking') {
-          delay = 600; // 思考阶段稍长停顿
+          delay = 600;
         } else if (event.type === 'table_loading' || event.type === 'chart_loading') {
-          delay = 800; // 数据加载阶段
+          delay = 800;
         } else if (event.type === 'text') {
-          // 中文逐字延迟
           const hasChinese = /[一-鿿]/.test(event.data.content);
           delay = hasChinese ? 50 : 25;
         } else if (event.type === 'table_data' || event.type === 'chart_data') {
-          delay = 100; // 数据推送快速
+          delay = 100;
         } else if (event.type === 'done') {
           delay = 10;
         }
@@ -78,7 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       // 确保发送 done 事件
-      if (!isAborted && events.length === 0 || (events.length > 0 && events[events.length - 1].type !== 'done')) {
+      if (!isAborted && (events.length === 0 || events[events.length - 1].type !== 'done')) {
         readable.push('data: {"type":"done","data":null}\n\n');
       }
 

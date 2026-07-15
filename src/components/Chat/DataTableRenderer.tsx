@@ -53,10 +53,14 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
     }
   }, [data, isLoading]);
 
+  // 防御：columns 或 data 可能为空/残缺
+  const columns = data?.columns;
+  const rows = data?.data;
+  const isValid = columns && columns.length > 0 && rows;
   const isSkeleton = phase === 'skeleton' || phase === 'expanding';
 
-  const columnCount = data?.columns?.length || 4;
-  const rowCount = data?.data?.length || 4;
+  const columnCount = columns?.length || 4;
+  const rowCount = rows?.length || 4;
 
   return (
     <div className={`data-table-renderer phase-${phase}`}>
@@ -72,20 +76,26 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
 
       {/* 真实表格层 */}
       <div className={`data-table-renderer__table ${isSkeleton ? 'is-hidden' : ''}`}>
-        {data && (
+        {isValid ? (
           <Table
-            columns={data.columns.map(col => ({
+            columns={columns.map(col => ({
               key: col.key,
               title: col.title,
               dataIndex: col.dataIndex,
               width: col.width,
             }))}
-            dataSource={data.data.map((row, i) => ({ ...row, _key: i }))}
+            dataSource={rows.map((row, i) => ({ ...row, _key: i }))}
             rowKey="_key"
-            pagination={data.data.length > 10 ? { pageSize: 10 } : false}
+            pagination={rows.length > 10 ? { pageSize: 10 } : false}
             size="small"
             bordered
           />
+        ) : (
+          <div className="data-table-renderer__error">
+            ⚠️ 表格数据不完整
+            {!columns && <p>缺少列定义 (columns)</p>}
+            {!rows && <p>缺少行数据 (data)</p>}
+          </div>
         )}
       </div>
 
@@ -134,6 +144,19 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
           .data-table-renderer__title {
             color: #e8e8e8;
           }
+        }
+        .data-table-renderer__error {
+          padding: 16px;
+          background: #fff2f0;
+          border: 1px solid #ffccc7;
+          border-radius: 8px;
+          color: #ff4d4f;
+          font-size: 13px;
+        }
+        .data-table-renderer__error p {
+          margin: 4px 0 0;
+          font-size: 12px;
+          color: #999;
         }
       `}</style>
     </div>

@@ -111,7 +111,7 @@ export const DataChartRenderer: React.FC<DataChartRendererProps> = ({
         className={`data-chart-renderer__chart ${!showChart ? 'is-hidden' : ''} ${chartReady ? 'is-ready' : ''}`}
         style={{ minHeight: 300 }}
       >
-        {data && showChart && (
+        {data && showChart && data.config ? (
           <ReactECharts
             ref={chartRef}
             echarts={echarts}
@@ -122,7 +122,11 @@ export const DataChartRenderer: React.FC<DataChartRendererProps> = ({
             onChartReady={handleChartReady}
             opts={{ renderer: 'canvas' }}
           />
-        )}
+        ) : data && showChart && !data.config ? (
+          <div className="data-chart-renderer__error">
+            ⚠️ 图表配置缺失 (config 为空)
+          </div>
+        ) : null}
       </div>
 
       <style>{`
@@ -193,6 +197,16 @@ export const DataChartRenderer: React.FC<DataChartRendererProps> = ({
             background: #1f1f1f;
             border-color: #333;
           }
+        }
+        .data-chart-renderer__error {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 200px;
+          color: #ff4d4f;
+          font-size: 14px;
+          background: #fff2f0;
+          border-radius: 8px;
         }
       `}</style>
     </div>
