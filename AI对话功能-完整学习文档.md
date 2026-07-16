@@ -1,6 +1,6 @@
 # AI 对话功能 — 完整学习文档
 
-> React 18 + TypeScript + Express SSE，支持一次性与逐块两种数据推送模式
+> React 18 + TypeScript + Express SSE + MySQL 持久化，支持多会话管理、一次性与逐块两种数据推送模式
 
 ---
 
@@ -12,17 +12,22 @@
 4. [SSE 协议设计](#4-sse-协议设计)
 5. [后端实现](#5-后端实现)
 6. [前端实现](#6-前端实现)
-   - [6.1 页面层：sbsjjc/index.tsx](#61-页面层sbsjjcindextsx)
-   - [6.2 消息气泡：ChatMessageItem.tsx](#62-消息气泡chatmessageitemtsx)
-   - [6.3 思考过程：ThinkingProcess.tsx](#63-思考过程thinkingprocesstsx)
-   - [6.4 表格渲染：DataTableRenderer.tsx](#64-表格渲染datatablerenderertsx)
-   - [6.5 图表渲染：DataChartRenderer.tsx](#65-图表渲染datachartrenderertsx)
-   - [6.6 Markdown 渲染管线](#66-markdown-渲染管线)
-   - [6.7 流式安全修补](#67-流式安全修补)
-7. [CSS 动画体系](#7-css-动画体系)
-8. [性能优化策略](#8-性能优化策略)
-9. [边界场景与容错](#9-边界场景与容错)
-10. [扩展指南](#10-扩展指南)
+   - [6.1 状态管理：Zustand Store](#61-状态管理zustand-store)
+   - [6.2 页面编排：sbsjjc/index.tsx](#62-页面编排sbsjjcindextsx)
+   - [6.3 会话侧边栏：SessionSidebar.tsx](#63-会话侧边栏sessionsidebartsx)
+   - [6.4 聊天面板：ChatPanel.tsx](#64-聊天面板chatpaneltsx)
+   - [6.5 消息气泡：ChatMessageItem.tsx](#65-消息气泡chatmessageitemtsx)
+   - [6.6 思考过程：ThinkingProcess.tsx](#66-思考过程thinkingprocesstsx)
+   - [6.7 表格渲染：DataTableRenderer.tsx](#67-表格渲染datatablerenderertsx)
+   - [6.8 图表渲染：DataChartRenderer.tsx](#68-图表渲染datachartrenderertsx)
+   - [6.9 Markdown 渲染管线](#69-markdown-渲染管线)
+   - [6.10 流式安全修补](#610-流式安全修补)
+7. [多会话架构](#7-多会话架构)
+8. [MySQL 持久化](#8-mysql-持久化)
+9. [CSS 动画体系](#9-css-动画体系)
+10. [性能优化策略](#10-性能优化策略)
+11. [边界场景与容错](#11-边界场景与容错)
+12. [扩展指南](#12-扩展指南)
 
 ---
 
@@ -36,11 +41,12 @@
 | 类型系统 | TypeScript | 6.0 |
 | 构建工具 | Vite | 8.1 |
 | UI 组件库 | Ant Design | 6.5 |
-| 状态管理 | Zustand + Redux Toolkit | 5.0 / 2.12 |
+| 状态管理 | Zustand | 5.0 |
 | Markdown 渲染 | react-markdown + remark-gfm + rehype-highlight + rehype-katex | — |
 | 图表渲染 | ECharts（按需加载） | 6.1 |
 | 虚拟滚动 | react-virtuoso | 4.18 |
 | 后端框架 | Express | 5.2 |
+| 数据库 | MySQL (mysql2) | 8.0 / 3.23 |
 | 运行时 | tsx（TypeScript 直接执行） | 4.23 |
 
 ### 文件清单
@@ -50,13 +56,21 @@ cms-react-ts/
 │
 ├── src/
 │   ├── types/
-│   │   └── chat.ts                          # 所有类型定义（核心）
+│   │   └── chat.ts                          # 所有类型定义（含 ChatSession）
+│   │
+│   ├── store/
+│   │   └── useChatStore.ts                  # Zustand Store（多会话 + SSE + 持久化）
+│   │
+│   ├── api/
+│   │   └── chat.ts                          # 前端 API 调用封装（会话 CRUD + 消息）
 │   │
 │   ├── pages/sbsjjc/
-│   │   ├── index.tsx                         # 聊天页面（SSE 解析 + 状态管理）
-│   │   └── index.css                         # 页面布局样式
+│   │   ├── index.tsx                         # 页面编排（Sidebar + Panel）
+│   │   └── index.css                         # 页面布局样式（flex row）
 │   │
 │   ├── components/Chat/
+│   │   ├── SessionSidebar.tsx + .css         # 会话侧边栏（创建/切换/删除/重命名）
+│   │   ├── ChatPanel.tsx                     # 聊天面板（Virtuoso + 输入）
 │   │   ├── ChatMessageItem.tsx               # 消息气泡（内容分发）
 │   │   ├── ThinkingProcess.tsx               # 思考过程面板
 │   │   ├── DataTableRenderer.tsx             # 表格过渡渲染
@@ -67,17 +81,16 @@ cms-react-ts/
 │   │   ├── ScrollToBottomButton.tsx          # 回到底部按钮
 │   │   └── ChatContainer.tsx                # 通用虚拟列表容器
 │   │
-│   ├── hooks/
-│   │   └── useStreamMessage.ts              # 可复用 SSE Hook（当前未使用）
-│   │
 │   └── utils/
 │       └── sanitizeStreamingMarkdown.ts      # 流式 Markdown 安全修补
 │
 ├── react-node/
 │   └── src/
-│       ├── index.ts                          # Express 服务入口
+│       ├── index.ts                          # Express 服务入口（含 initDB）
+│       ├── db.ts                             # MySQL 连接池 + 表初始化
 │       ├── routes/
-│       │   └── chat.ts                       # POST /api/chat SSE 路由
+│       │   ├── chat.ts                       # POST /api/chat SSE 路由
+│       │   └── sessions.ts                   # 会话 CRUD + 消息持久化 API
 │       └── services/
 │           └── aiService.ts                 # AI 模拟服务（事件生成引擎）
 │
@@ -89,50 +102,77 @@ cms-react-ts/
 ## 2. 架构全景图
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         浏览器                               │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  sbsjjc/index.tsx  (页面控制器)                       │   │
-│  │  ┌──────────────────────────────────────────────┐    │   │
-│  │  │ 1. fetch('/api/chat', { body: { message } }) │    │   │
-│  │  │ 2. response.body.getReader()                  │    │   │
-│  │  │ 3. 解析 SSE → 构建 contentBlocks / thinkingStages │   │
-│  │  │ 4. setMessages() 驱动重渲染                   │    │   │
-│  │  └──────────────────────────────────────────────┘    │   │
-│  │                          │                            │   │
-│  │                          ▼                            │   │
-│  │  ┌──────────────────────────────────────────────┐    │   │
-│  │  │  Virtuoso 虚拟列表                              │   │
-│  │  │  ┌──────────────────────────────────────┐    │    │   │
-│  │  │  │  ChatMessageItem (React.memo)         │    │    │   │
-│  │  │  │  ├─ ThinkingProcess  (思考面板)       │    │    │   │
-│  │  │  │  └─ ContentBlockRenderer             │    │    │   │
-│  │  │  │     ├─ type:text → MarkdownRenderer  │    │    │   │
-│  │  │  │     ├─ type:table → DataTableRenderer│    │    │   │
-│  │  │  │     └─ type:chart → DataChartRenderer│    │    │   │
-│  │  │  └──────────────────────────────────────┘    │    │   │
-│  │  └──────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                          │                                  │
-└──────────────────────────┼──────────────────────────────────┘
-                           │ SSE (text/event-stream)
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Express Server (端口 3001)                   │
-│                                                             │
-│  chat.ts                          aiService.ts              │
-│  ┌──────────────────┐            ┌──────────────────────┐   │
-│  │ POST /api/chat    │──调用──▶  │ generateStream(msg)   │   │
-│  │                   │            │                      │   │
-│  │ 遍历 SSEEvent[]    │◀──返回──  │ 匹配关键词 → 选模板     │   │
-│  │ JSON.stringify →   │            │ 生成器函数 → SSEEvent[] │   │
-│  │ readable.push()    │            │                      │   │
-│  │ sleep(delay) 调速  │            │ thinking / text /     │   │
-│  └──────────────────┘            │ table_data / chart_data│   │
-│                                  └──────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                              浏览器                                    │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  sbsjjc/index.tsx  (页面编排，仅 25 行)                        │   │
+│  │  ┌─────────────────────┐  ┌─────────────────────────────┐    │   │
+│  │  │  SessionSidebar     │  │  ChatPanel                   │    │   │
+│  │  │  ┌───────────────┐  │  │  ┌───────────────────────┐  │    │   │
+│  │  │  │ 会话列表       │  │  │  │ ChatHeader + 消息计数  │  │    │   │
+│  │  │  │ 创建/切换/删除 │  │  │  │ Virtuoso 虚拟列表     │  │    │   │
+│  │  │  │ 流式状态指示   │  │  │  │ ChatInput 输入/停止   │  │    │   │
+│  │  │  └───────┬───────┘  │  │  └───────────┬───────────┘  │    │   │
+│  │  └──────────┼──────────┘  └───────────────┼──────────────┘    │   │
+│  │             │                              │                    │   │
+│  │             └──────────┬───────────────────┘                    │   │
+│  │                        │                                        │   │
+│  │          ┌─────────────▼──────────────┐                        │   │
+│  │          │     useChatStore (Zustand)  │  ← 全局唯一 Store       │   │
+│  │          │                            │                        │   │
+│  │          │  sessions: ChatSession[]    │  所有会话数据           │   │
+│  │          │  activeSessionId: string    │  当前活跃会话指针       │   │
+│  │          │                            │                        │   │
+│  │          │  abortControllers: Map<>    │  模块级闭包，不序列化   │   │
+│  │          │    "A" → AbortController    │                        │   │
+│  │          │    "B" → AbortController    │  每个会话独立中断控制   │   │
+│  │          │                            │                        │   │
+│  │          │  Actions:                  │                        │   │
+│  │          │   initStore()      加载会话列表                      │   │
+│  │          │   createSession()  创建会话 + API                     │   │
+│  │          │   deleteSession()  删除会话 + API + abort             │   │
+│  │          │   renameSession()  重命名 + API                       │   │
+│  │          │   setActiveSession() 切换指针 + 自动加载历史           │   │
+│  │          │   sendMessage()    SSE 循环 + flush + persist         │   │
+│  │          │   loadMessages()   GET 历史消息                       │   │
+│  │          │   persistMessages() POST 持久化消息                   │   │
+│  │          └─────────────┬──────────────┘                        │   │
+│  │                        │ 读写                                    │   │
+│  └────────────────────────┼───────────────────────────────────────┘   │
+│                           │ fetch()                                   │
+└───────────────────────────┼───────────────────────────────────────────┘
+                            │
+              ┌─────────────┴──────────────┐
+              │   SSE: text/event-stream   │  持久化: JSON
+              ▼                            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Express Server (端口 3001)                          │
+│                                                                      │
+│  chat.ts                    sessions.ts               db.ts          │
+│  ┌──────────────────┐     ┌──────────────────┐     ┌──────────┐     │
+│  │ POST /api/chat    │     │ GET /api/sessions │     │ MySQL    │     │
+│  │  SSE 流式响应      │     │ POST ...sessions  │     │ 连接池   │     │
+│  │  generateStream()  │     │ PATCH ../:id      │     │          │     │
+│  │  → SSEEvent[]      │     │ DELETE ../:id     │     │ sessions │     │
+│  │  → readable.push() │     │ GET ../:id/msgs   │     │ messages │     │
+│  └──────────────────┘     │ POST ../:id/msgs   │     └──────────┘     │
+│                           └──────────────────┘                        │
+│                                                                      │
+│  aiService.ts                                                        │
+│  ┌────────────────────────────────────────────────────┐              │
+│  │  generateStream(msg) → SSEEvent[]                   │              │
+│  │  关键词匹配 → 选择生成器 → 展开 Generator 为数组    │              │
+│  └────────────────────────────────────────────────────┘              │
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+**核心架构原则：数据流与视图彻底分离**
+
+- **SSE 循环**在 Zustand action 中运行，不依赖任何 React 组件
+- **切换会话**只改变 `activeSessionId` 指针，不影响任何运行中的 SSE 连接
+- **每个会话**有独立的 `AbortController`，存储在模块级 `Map<string, AbortController>` 中
+- **持久化**由前端 Store 在 SSE 流结束后自动触发，后端仅提供 CRUD API
 
 ---
 
@@ -219,6 +259,22 @@ interface ChatMessage {
 ```
 
 **兼容设计**：`content` 和 `contentBlocks` 并存。旧代码只读 `content`，新代码优先读 `contentBlocks`。
+
+### 第六层：会话模型（多会话架构新增）
+
+```typescript
+interface ChatSession {
+  id: string;                   // 会话唯一标识，前端生成
+  title: string;                // 会话标题（可双击重命名）
+  messages: ChatMessage[];      // 会话内消息列表
+  createdAt: number;
+  updatedAt: number;
+  isStreaming: boolean;         // 该会话是否正在流式接收中
+  draftInput?: string;          // 切换会话时保留的输入框草稿
+}
+```
+
+**关键设计**：`ChatMessage` 不包含 `sessionId` 字段——消息通过 `sessions[id].messages` 自然归属会话。这避免了跨类型侵入，保持了消息类型的纯粹性。
 
 ### 第四层：SSE 事件传输格式
 
@@ -569,262 +625,189 @@ function* generateChunkedFlow(): Generator<SSEEvent> {
 
 ## 6. 前端实现
 
-### 6.1 页面层：sbsjjc/index.tsx
+### 6.1 状态管理：Zustand Store
 
-这是整个功能的大脑。负责：
+> 文件：`src/store/useChatStore.ts`（约 500 行）
 
-1. 消息列表状态管理
-2. SSE 流解析
-3. 内容块 / 思考步骤的增量构建
-4. 中断控制
-5. 虚拟滚动集成
+这是整个多会话架构的核心。所有会话数据、SSE 流解析、消息持久化全部在此集中管理，**不依赖任何 React 组件**。
 
-#### 6.1.1 状态定义
+#### 6.1.1 模块级闭包
 
 ```typescript
-const [messages, setMessages] = useState<ChatMessage[]>([]);
-const [isStreaming, setIsStreaming] = useState(false);
-const [atBottom, setAtBottom] = useState(true);
-const inputRef = useRef<HTMLInputElement>(null);
-const abortRef = useRef<AbortController | null>(null);
-const virtuosoRef = useRef<VirtuosoHandle>(null);
+// 不可序列化，不进入 Zustand 状态
+const abortControllers = new Map<string, AbortController>();
+let idCounter = 0;
+const generateId = (prefix: string) => `${prefix}_${++idCounter}_${Date.now()}`;
 ```
 
-三个 ref 的用途：
-- `inputRef`：发送后清空输入框
-- `abortRef`：保存当前请求的 AbortController，供"停止"按钮使用
-- `virtuosoRef`：发送消息后强制滚动到底部
+- `abortControllers`：每个会话独立的 AbortController，key 为 sessionId
+- 存于模块闭包而非 Zustand state 中，避免序列化问题
 
-#### 6.1.2 发送流程（handleSend）
-
-整个 `handleSend` 用 `useCallback` 包裹，依赖 `[isStreaming]`。核心流程分 4 步：
-
-```
-Step 1: 创建消息
-  ├─ userMsg = { id, role:'user', content:input }
-  ├─ assistantMsg = { id, role:'assistant', content:'', contentBlocks:[], thinkingStages:[], isStreaming:true }
-  └─ setMessages(prev => [...prev, userMsg, assistantMsg])
-
-Step 2: 发起 SSE 请求
-  ├─ controller = new AbortController()
-  ├─ abortRef.current = controller
-  ├─ setIsStreaming(true)
-  └─ fetch('/api/chat', { method:'POST', body: JSON.stringify({message:input}), signal: controller.signal })
-
-Step 3: 流式解析循环
-  └─ while (true) {
-       ├─ reader.read() → chunk
-       ├─ 拼接 lineBuffer
-       ├─ 按 \n\n 分割事件
-       ├─ JSON.parse(data:) → switch event.type：
-       │   ├─ 'thinking'     → thinkingStages.push({...})
-       │   ├─ 'text'         → 新建/追加 TextContent（新建对象，非原地修改）
-       │   ├─ 'table_data'   → handleDataChunk({ chunkType:'table', index:0, ... })
-       │   ├─ 'chart_data'   → handleDataChunk({ chunkType:'chart', index:0, ... })
-       │   ├─ 'data_chunk'   → handleDataChunk(event.data)
-       │   └─ 'done'         → break
-       ├─ 如果 hasUpdates → setMessages(更新 assistantMsg)
-       └─ }
-     }
-
-Step 4: finally 清理
-  ├─ setIsStreaming(false)
-  ├─ abortRef.current = null
-  └─ setMessages(最终更新，isStreaming: false)
-```
-
-#### 6.1.3 SSE 解析器的关键细节
-
-**行缓冲（Line Buffer）**：
+#### 6.1.2 Store 状态与 Actions
 
 ```typescript
-let lineBuffer = '';
+interface ChatStoreState {
+  sessions: ChatSession[];          // 所有会话
+  activeSessionId: string | null;   // 当前活跃会话指针
+  isLoadingMessages: boolean;       // 是否正在加载历史消息
 
-while (true) {
-  const { done, value } = await reader.read();
-  const chunk = decoder.decode(value, { stream: true });
-  lineBuffer += chunk;
+  // 初始化
+  initStore(): Promise<void>;       // 启动时从后端加载会话列表
 
-  const events = lineBuffer.split('\n\n');   // SSE 事件以双换行分隔
-  lineBuffer = events.pop() || '';           // 最后一段可能不完整，留到下次
+  // 会话 CRUD（均调用后端 API）
+  createSession(title?): Promise<string>;
+  deleteSession(id): Promise<void>;
+  renameSession(id, title): Promise<void>;
+  setActiveSession(id): void;       // 切换指针 + 自动加载历史
 
-  for (const rawEvent of events) { /* 处理 */ }
+  // 消息
+  loadMessages(sessionId): Promise<void>;     // GET 历史消息
+  flushMessages(sessionId, ...): void;         // 流式更新（批量写入 Store）
+  persistMessages(sessionId): Promise<void>;   // POST 持久化到 MySQL
+
+  // 流式控制
+  sendMessage(sessionId, content): Promise<void>;  // 发起 SSE + 解析循环
+  stopStreaming(sessionId): void;                   // 中断单个会话
+  stopAllStreaming(): void;                         // 中断所有
 }
 ```
 
-这是 SSE 客户端解析的标准模式。`events.pop()` 是关键——网络数据包可能在任意位置切割，最后一个 `\n\n` 之后的内容可能不完整，必须留到下一个 chunk 再拼接。
-
-**text 块累积——为什么必须新建对象**：
+#### 6.1.3 sendMessage — SSE 循环在 Store 中运行
 
 ```typescript
-// ✅ 正确做法：新建对象
-case 'text': {
-  const textContent = event.data.content as string;
-  const lastBlock = contentBlocks[contentBlocks.length - 1];
-  if (lastBlock && lastBlock.type === 'text') {
-    contentBlocks[contentBlocks.length - 1] = {
-      type: 'text',
-      text: (lastBlock as TextContent).text + textContent,  // 新对象
-    };
-  } else {
-    contentBlocks.push({ type: 'text', text: textContent });
+sendMessage: async (sessionId, content) => {
+  // 1. 创建 user + assistant 消息，push 到 session.messages
+  // 2. 创建 AbortController，存入 abortControllers.set(sessionId, controller)
+  // 3. fetch('/api/chat', { body: { message: content, sessionId } })
+
+  // 4. SSE 读取循环（完整迁移自旧版 index.tsx 的 handleSend）：
+  while (true) {
+    const { done, value } = await reader.read();
+    // ... lineBuffer 分割 ...
+    // ... JSON.parse + switch event.type ...
+    // ... handleDataChunk ...
+    if (hasUpdates) {
+      get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+    }
+  }
+
+  // 5. finally:
+  abortControllers.delete(sessionId);
+  get().flushMessages(sessionId, ..., false);  // isStreaming = false
+  get().persistMessages(sessionId);            // 持久化到 MySQL
+}
+```
+
+**为什么循环要放在 Store 中？** 这是切换会话不中断的核心保障。如果循环在组件中，组件卸载 → 循环中断 → 数据丢失。放在 Store 中，循环的生命周期完全独立于 UI 渲染。
+
+#### 6.1.4 setActiveSession — 自动加载历史
+
+```typescript
+setActiveSession: (id) => {
+  set({ activeSessionId: id });  // 切换指针
+
+  // 如果该会话无消息且不在流式中 → 从后端加载历史
+  const session = get().getSession(id);
+  if (session && session.messages.length === 0 && !session.isStreaming) {
+    get().loadMessages(id);
   }
 }
 ```
 
+**两种情况不调接口：**
+- `messages.length > 0` → 数据已在内存中（切换回来，或刚创建）
+- `isStreaming === true` → 正在接收 SSE 数据，无需加载
+
+**调用接口的唯一条件：** 切换到空消息且非流式中的会话（通常是刷新页面后首次进入）
+
+#### 6.1.5 前端 API 层
+
+> 文件：`src/api/chat.ts`
+
 ```typescript
-// ❌ 错误做法：原地修改（曾导致 bug）
-(lastBlock as TextContent).text += textContent;  // 对象引用不变
+// 会话 CRUD
+fetchSessions()          → GET  /api/sessions
+createSessionAPI(id, t)  → POST /api/sessions
+deleteSessionAPI(id)     → DELETE /api/sessions/:id
+renameSessionAPI(id, t)  → PATCH /api/sessions/:id
+
+// 消息持久化
+fetchMessages(sessionId)      → GET  /api/sessions/:id/messages
+saveMessagesAPI(sid, msgs[])  → POST /api/sessions/:id/messages
 ```
 
-**为什么必须新建？** 下游的 `ChatMessageItem` 使用 `React.memo` 做浅比较（现已升级为深度比较，见 6.2.3 节）。如果原地修改，React 看到同一个对象引用，认为 props 没变，就跳过了重渲染。结果：只有第一个字显示，后续更新全部丢失。
+### 6.2 页面编排：sbsjjc/index.tsx
 
-**一次性与逐块模式的统一入口——handleDataChunk**：
+> 文件：`src/pages/sbsjjc/index.tsx`（仅 30 行）
+
+从原来的 453 行精简为纯编排组件，不再包含任何业务逻辑：
 
 ```typescript
-/**
- * 统一的数据块处理函数
- * 将一次性 table_data / chart_data 和逐块 data_chunk 合并为同一流程
- */
-const handleDataChunk = (chunk: SSEDataChunkData) => {
-  if (pendingLoadingBlock) pendingLoadingBlock = null;
+const Sbsjjc: React.FC = () => {
+  const sessions = useChatStore((s) => s.sessions);
+  const initStore = useChatStore((s) => s.initStore);
+  const initializedRef = useRef(false);
 
-  if (chunk.chunkType === "table") {
-    if (chunk.index === 0) {
-      // 首 chunk（或一次性 table_data）：创建 TableContent
-      contentBlocks.push({
-        type: "table", columns: chunk.columns!, data: chunk.rows || [], title: chunk.title,
-      } as TableContent);
-    } else {
-      // 后续 chunk：从尾部向前找到最后一个 table block，替换为新对象（追加行）
-      for (let i = contentBlocks.length - 1; i >= 0; i--) {
-        if (contentBlocks[i].type === "table") {
-          contentBlocks[i] = {
-            ...contentBlocks[i],
-            data: [...(contentBlocks[i] as TableContent).data, ...(chunk.rows || [])],
-          } as TableContent;
-          break;
-        }
-      }
-    }
-  } else if (chunk.chunkType === "chart") {
-    if (chunk.index === 0) {
-      // 首 chunk：优先使用 chunk.config（完整 option），否则从 xAxisData + series 组装
-      const baseConfig = chunk.config || (chunk.xAxisData
-        ? { xAxis: { type: "category", data: chunk.xAxisData }, series: chunk.series || [] }
-        : { series: chunk.series || [] });
-      contentBlocks.push({
-        type: "chart", chartType: chunk.chartType!, title: chunk.title, config: baseConfig,
-      } as ChartContent);
-    } else {
-      // 后续 chunk：合并 series 到已有 config（新建对象替换）
-      for (let i = contentBlocks.length - 1; i >= 0; i--) {
-        if (contentBlocks[i].type === "chart") {
-          const existing = contentBlocks[i] as ChartContent;
-          contentBlocks[i] = {
-            ...existing,
-            config: {
-              ...existing.config,
-              series: [...existing.config.series, ...(chunk.series || [])],
-            },
-          } as ChartContent;
-          break;
-        }
-      }
-    }
-  }
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    if (sessions.length === 0) initStore();  // 启动时加载会话列表
+  }, [sessions.length, initStore]);
+
+  return (
+    <div className="sbsjjc-chat">
+      <SessionSidebar />
+      <ChatPanel />
+    </div>
+  );
 };
 ```
 
-**三个 case 统一委托**：
+### 6.3 会话侧边栏：SessionSidebar.tsx
 
-```typescript
-// 一次性表格 → 转化为"单 chunk"
-case "table_data":
-  handleDataChunk({ chunkType: "table", index: 0, columns: event.data.columns,
-                    rows: event.data.data, title: event.data.title });
-  break;
+> 文件：`src/components/Chat/SessionSidebar.tsx` + `.css`
 
-// 一次性图表 → 转化为"单 chunk"
-case "chart_data":
-  handleDataChunk({ chunkType: "chart", index: 0, chartType: event.data.chartType,
-                    config: event.data.config, title: event.data.title });
-  break;
+- **260px 宽度**，左侧固定，垂直排列
+- **"新建会话"按钮**：调用 `store.createSession()` → 后端 API + 本地 Store
+- **会话列表项**：显示标题、消息数徽章、流式动画指示器
+- **双击标题**：内联编辑 → `store.renameSession()` → PATCH API
+- **删除按钮**：点击后显示确认 ✓/✕ → `store.deleteSession()` → DELETE API + abort SSE
+- **非活跃但流式中**：显示停止按钮 ⏹ → `store.stopStreaming(id)`
+- **活跃会话高亮**：蓝色背景
 
-// 逐块模式 → 直接透传
-case "data_chunk":
-  handleDataChunk(event.data as SSEDataChunkData);
-  break;
+### 6.4 聊天面板：ChatPanel.tsx
+
+> 文件：`src/components/Chat/ChatPanel.tsx`
+
+从旧版 index.tsx 提取的聊天 UI，**只读取 Store，不管理任何状态**：
+
+```
+ChatPanel
+├── ChatHeader    — 会话标题 + "N 条消息 · 接收中..."
+├── ChatBody      — Virtuoso 虚拟列表
+│   └── ChatMessageItem (React.memo + 深度比较)
+└── ChatInput     — 输入框 + 发送/停止按钮
 ```
 
-**设计意图**：一次性模式和逐块模式在协议层不同（`table_data` vs `data_chunk`），但在数据层等价——都是"把数据推入 contentBlocks"。将两者在 SSE 解析器的 switch 中转化为统一调用 `handleDataChunk`，消除重复逻辑，保证行为一致。
-
-**批量更新**：
-
-```typescript
-let hasUpdates = false;
-// ... 处理事件 ...
-if (hasUpdates) {
-  setMessages(prev => {
-    // 函数式更新，基于最新 state
-    const idx = prev.findIndex(m => m.id === assistantId);
-    updated[idx] = {
-      ...updated[idx],
-      contentBlocks: [...contentBlocks],    // 浅拷贝数组
-      thinkingStages: [...thinkingStages],
-      content: contentBlocks                // 拼接兼容字段
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join(''),
-    };
-  });
-}
-```
-
-设计要点：
-- 用 `hasUpdates` 标记减少不必要的 `setMessages` 调用
-- 函数式更新 `prev => {...}` 确保基于最新 state（非闭包旧值）
-- `[...contentBlocks]` 创建新数组引用（React 才能检测到变化）
-
-#### 6.1.4 停止处理
-
-```typescript
-const handleStop = useCallback(() => {
-  abortRef.current?.abort();    // 中断 fetch 请求
-  setIsStreaming(false);        // 解除输入框禁用
-}, []);
-```
-
-`abort()` 触发后，fetch 抛出 `AbortError`，在 catch 中被静默吞掉（`if (err.name !== 'AbortError')`），不显示错误提示。finally 中正常保存已接收的部分内容。
-
-#### 6.1.5 虚拟滚动集成
-
-```typescript
-<Virtuoso
-  ref={virtuosoRef}
-  data={messages}
-  followOutput={atBottom ? 'smooth' : false}   // 用户主动上滚后不自动跟随
-  atBottomStateChange={setAtBottom}              // 实时得知用户是否在底部
-  itemKey={(msg) => msg.id}                      // 稳定 key
-  itemContent={(_index, msg) => <ChatMessageItem message={msg} />}
-  increaseViewportBy={{ top: 400, bottom: 400 }}  // 预渲染上下 400px
-/>
-```
-
-`followOutput` 的关键行为：只有当用户处于底部时，新消息才自动滚动。如果用户往上翻看历史，新内容不会打断。
+- 消息数据：`store.getSession(activeSessionId)?.messages`
+- 输入框：`session.draftInput`（切换会话时保留草稿）
+- 发送：`store.sendMessage(activeSessionId, content)`
+- 停止：`store.stopStreaming(activeSessionId)`
+- 历史加载中：显示 "⏳ 加载历史消息中..."
+- Virtuoso 用 `key={activeSessionId}` 确保切换会话时完全重建列表
 
 ---
 
-### 6.2 消息气泡：ChatMessageItem.tsx
+### 6.5 消息气泡：ChatMessageItem.tsx
 
-#### 6.2.1 职责
+#### 6.5.1 职责
 
 单个消息气泡组件，负责：
 1. 区分用户/AI 消息样式
 2. AI 消息的内容分发（思考过程 → 内容块 → 兼容旧版纯文本）
 3. 性能优化（React.memo）
 
-#### 6.2.2 渲染分发逻辑
+#### 6.5.2 渲染分发逻辑
 
 ```
 message.role === 'user'
@@ -839,7 +822,7 @@ message.role === 'assistant'
   → 否则（兼容旧版）         → <MarkdownRenderer content={message.content}>
 ```
 
-#### 6.2.3 React.memo 优化
+#### 6.5.3 React.memo 优化
 
 ```typescript
 export const ChatMessageItem = React.memo(
@@ -880,7 +863,7 @@ export const ChatMessageItem = React.memo(
 - `content` 字段只拼接 text 块，不反映表格/图表数据变化
 - 深度检查只比较 `data.length` 和 `series.length`（O(N) 级别，N=block 数量），不递归比较每个数据行，性能可接受
 
-#### 6.2.4 ContentBlockRenderer
+#### 6.5.4 ContentBlockRenderer
 
 ```typescript
 const ContentBlockRenderer: React.FC<{ block: MessageContent; isLoading?: boolean }> = ({
@@ -901,9 +884,9 @@ const ContentBlockRenderer: React.FC<{ block: MessageContent; isLoading?: boolea
 
 ---
 
-### 6.3 思考过程：ThinkingProcess.tsx
+### 6.6 思考过程：ThinkingProcess.tsx
 
-#### 6.3.1 组件接口
+#### 6.6.1 组件接口
 
 ```typescript
 interface ThinkingProcessProps {
@@ -912,7 +895,7 @@ interface ThinkingProcessProps {
 }
 ```
 
-#### 6.3.2 阶段配置映射
+#### 6.6.2 阶段配置映射
 
 ```typescript
 const stageConfig = {
@@ -926,7 +909,7 @@ const stageConfig = {
 
 用配置对象驱动渲染，而非硬编码 switch-case。新增阶段只需加一行配置。
 
-#### 6.3.3 状态计算
+#### 6.6.3 状态计算
 
 ```typescript
 // 当前活跃阶段：从后往前找第一个非 done 的阶段
@@ -936,7 +919,7 @@ const activeStage = [...stages].reverse().find(s => s.type !== 'done');
 const isAllDone = stages[stages.length - 1]?.type === 'done' && !isStreaming;
 ```
 
-#### 6.3.4 UI 结构
+#### 6.6.4 UI 结构
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -954,7 +937,7 @@ const isAllDone = stages[stages.length - 1]?.type === 'done' && !isStreaming;
 
 每个步骤三部分：**指示器**（圆点 + 连线）+ **内容**（标签 + 消息）+ **时间戳**。
 
-#### 6.3.5 动画细节
+#### 6.6.5 动画细节
 
 | 元素 | 动画 | 实现 |
 |------|------|------|
@@ -965,16 +948,16 @@ const isAllDone = stages[stages.length - 1]?.type === 'done' && !isStreaming;
 
 ---
 
-### 6.4 表格渲染：DataTableRenderer.tsx
+### 6.7 表格渲染：DataTableRenderer.tsx
 
-#### 6.4.1 三阶段状态机
+#### 6.7.1 三阶段状态机
 
 ```
  skeleton ──────────→ expanding ──────────→ ready
 (骨架屏占位)   50ms   (交叉过渡)   450ms    (表格展示)
 ```
 
-#### 6.4.2 阶段切换逻辑
+#### 6.7.2 阶段切换逻辑
 
 ```typescript
 const [phase, setPhase] = useState<'skeleton' | 'expanding' | 'ready'>(
@@ -1000,7 +983,7 @@ useEffect(() => {
 - **一次性模式**：`isLoading` 始终为 `false`，phase 初始为 `ready`，骨架屏从不触发
 - **Chunk 模式**：组件挂载时 `isLoading=true` 且已有数据 → phase 直接 `ready`，后续每次 chunk 到达时 `data.data.length` 增加 → React 重渲染 → 新行滑入
 
-#### 6.4.3 双层渲染结构
+#### 6.7.3 双层渲染结构
 
 ```jsx
 <div className={`data-table-renderer phase-${phase}`}>
@@ -1020,7 +1003,7 @@ useEffect(() => {
 
 **为什么用两层 div 而非条件渲染？** 条件渲染会导致 DOM 挂载/卸载，无法做过渡动画。两层同时存在于 DOM 中，仅通过 opacity 控制可见性，CSS transition 才能生效。
 
-#### 6.4.5 逐行追加上动画（chunk 模式专属）
+#### 6.7.5 逐行追加上动画（chunk 模式专属）
 
 ```css
 .data-table-renderer .ant-table-tbody > tr {
@@ -1035,7 +1018,7 @@ useEffect(() => {
 
 **为什么只对新增行触发动画？** Ant Design `<Table>` 使用 `rowKey="_key"`（数组索引），chunk 模式严格追加行（不删除不重排），React reconciliation 保留已有 `<tr>` DOM 节点。CSS `animation-fill-mode: both` 确保已播放过的动画停留在终态。新挂载的 `<tr>` 元素自动播放 `rowSlideIn` 动画。
 
-#### 6.4.4 防御性渲染
+#### 6.7.4 防御性渲染
 
 ```typescript
 const columns = data?.columns;
@@ -1058,9 +1041,9 @@ const isValid = columns && columns.length > 0 && rows;
 
 ---
 
-### 6.5 图表渲染：DataChartRenderer.tsx
+### 6.8 图表渲染：DataChartRenderer.tsx
 
-#### 6.5.1 阶段逻辑（与表格相同模式）
+#### 6.8.1 阶段逻辑（与表格相同模式）
 
 ```typescript
 const [phase, setPhase] = useState<'skeleton' | 'expanding' | 'ready'>(
@@ -1082,7 +1065,7 @@ useEffect(() => {
 }, [isLoading, phase, data]);
 ```
 
-#### 6.5.2 notMerge — 增量图表更新的关键
+#### 6.8.2 notMerge — 增量图表更新的关键
 
 ```tsx
 <ReactECharts
@@ -1097,7 +1080,7 @@ useEffect(() => {
 
 > ⚠️ 此前的代码使用 `notMerge`（即 `notMerge={true}`），导致每次 option 变化时图表卸载后重建，chunk 模式无法实现增量效果。
 
-#### 6.5.3 ECharts 按需加载
+#### 6.8.3 ECharts 按需加载
 
 ```typescript
 import * as echarts from 'echarts/core';
@@ -1113,7 +1096,7 @@ echarts.use([BarChart, LineChart, PieChart, ScatterChart,
 
 **为什么要按需加载？** 全量 ECharts 约 1MB（gzip 后 ~300KB），按需注册后约 600KB（gzip 后 ~180KB）。只引入当前用到的图表类型和组件。
 
-#### 6.5.4 与 DataTableRenderer 的区别
+#### 6.8.4 与 DataTableRenderer 的区别
 
 两者都是三阶段状态机，但图表多了一个**缩放 + 弹性入场**：
 
@@ -1134,7 +1117,7 @@ echarts.use([BarChart, LineChart, PieChart, ScatterChart,
 
 此外，ECharts 自身的 `animationDuration: 1500` + `animationEasing: 'elasticOut'` 与 CSS 入场叠加，形成"弹出来"的视觉感受。
 
-#### 6.5.5 ECharts 渲染就绪回调
+#### 6.8.5 ECharts 渲染就绪回调
 
 ```typescript
 const [chartReady, setChartReady] = useState(false);
@@ -1149,7 +1132,7 @@ const handleChartReady = () => {
 
 ---
 
-### 6.6 Markdown 渲染管线
+### 6.9 Markdown 渲染管线
 
 ```
 流式文本（string）
@@ -1188,7 +1171,7 @@ const handleChartReady = () => {
 
 ---
 
-### 6.7 流式安全修补
+### 6.10 流式安全修补
 
 > 文件：`src/utils/sanitizeStreamingMarkdown.ts`
 
@@ -1221,7 +1204,228 @@ export function sanitizeStreamingMarkdown(text: string): string {
 
 ---
 
-## 7. CSS 动画体系
+## 7. 多会话架构
+
+### 7.1 核心问题：切换会话如何不中断 SSE？
+
+这是多会话设计中最关键的挑战。答案是**数据流与视图彻底分离**，分三层实现：
+
+#### 第一层：物理隔离 — Map<string, AbortController>
+
+```typescript
+// 模块级闭包（不在 Zustand state 中，不可序列化）
+const abortControllers = new Map<string, AbortController>();
+
+// 会话 A 发消息
+abortControllers.set("session_A", new AbortController());
+fetch("/api/chat", { signal: abortControllers.get("session_A").signal });
+
+// 会话 B 发消息——完全独立的 AbortController
+abortControllers.set("session_B", new AbortController());
+fetch("/api/chat", { signal: abortControllers.get("session_B").signal });
+```
+
+两个 fetch 各自独立，关闭 A 不影响 B。
+
+#### 第二层：写入分离 — SSE 循环在 Zustand action 中
+
+```
+❌ 传统做法：循环在 React 组件里
+   组件卸载 → useEffect cleanup → 循环中断
+
+✅ 我们的做法：循环在 Zustand Store action 里
+   sendMessage(sessionId, content) {
+     while (true) {
+       const { done, value } = await reader.read();
+       // 直接 set() 更新 Zustand Store
+       get().flushMessages(sessionId, ...);
+     }
+   }
+   循环不依赖任何组件，永不断
+```
+
+#### 第三层：视图切换 — activeSessionId 只是一个指针
+
+```typescript
+setActiveSession: (id) => {
+  set({ activeSessionId: id });  // 仅此而已
+}
+```
+
+### 7.2 完整时序示例
+
+```
+时间 →
+
+用户: 在会话A输入"分析销售数据"
+  → Store.sendMessage("A", "分析销售数据")
+  → fetch /api/chat → SSE连接A建立
+  → [后台循环] 逐步更新 sessions["A"].messages
+
+用户: 点击切换到会话B              | (SSE循环A继续！)
+  → Store.setActiveSession("B")    |
+  → sessions["B"].messages 为空    |
+  → 自动 loadMessages("B")        |
+     → GET /api/sessions/B/messages ← 调历史接口
+
+用户: 在会话B输入"你好"
+  → Store.sendMessage("B", "你好")
+  → fetch /api/chat → SSE连接B建立
+    两个SSE循环并行运行！
+    A持续写入表格+图表数据
+    B持续写入简单文本
+
+用户: 切回会话A
+  → Store.setActiveSession("A")
+  → sessions["A"].messages 已有数据（含完整表格+图表）
+  → 直接渲染，不调接口
+  → SSE循环A已结束，数据完整
+```
+
+### 7.3 刷新页面后的恢复流程
+
+```
+页面加载
+  → initStore()
+    → GET /api/sessions → 会话列表（不含消息）
+    → setActiveSession(sessions[0].id)
+      → messages.length === 0? → 是 → loadMessages(id)
+        → GET /api/sessions/:id/messages → 恢复历史消息
+      → messages.length > 0? → 否 → 直接用内存数据
+```
+
+**判断规则：**
+- `messages` 为空 + 非流式中 → 调历史接口
+- `messages` 有数据 → 走内存（刚创建的或刚切回来的）
+- `isStreaming === true` → 不调接口（数据正在 SSE 流入）
+
+### 7.4 会话 CRUD 的完整链路
+
+```
+createSession(title)
+  → POST /api/sessions { id, title }  后端存储
+  → set({ sessions: [...sessions, newSession] })  本地 Store
+  → setActiveSession(id)
+
+deleteSession(id)
+  → abortControllers.get(id)?.abort()  中断 SSE
+  → DELETE /api/sessions/:id           后端删除（CASCADE 删消息）
+  → set({ sessions: sessions.filter(...) })  本地移除
+
+renameSession(id, title)
+  → set({ ...乐观更新 })              先改本地（即刻反映）
+  → PATCH /api/sessions/:id { title }  再同步后端
+```
+
+---
+
+## 8. MySQL 持久化
+
+### 8.1 数据库设计
+
+**数据库名**：`cms_chat`
+
+```sql
+-- 会话表
+CREATE TABLE sessions (
+  id VARCHAR(64) PRIMARY KEY,
+  title VARCHAR(255) NOT NULL DEFAULT '新对话',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+-- 消息表
+CREATE TABLE messages (
+  id VARCHAR(64) PRIMARY KEY,
+  session_id VARCHAR(64) NOT NULL,
+  role ENUM('user', 'assistant') NOT NULL,
+  content TEXT NOT NULL,
+  content_blocks JSON,           -- MySQL 8.0 原生 JSON 列
+  thinking_stages JSON,
+  created_at BIGINT NOT NULL,
+  INDEX idx_session_id (session_id),
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+```
+
+**设计要点：**
+- `content_blocks` / `thinking_stages` 用 JSON 列：mysql2 自动序列化/反序列化
+- `ON DELETE CASCADE`：删会话时消息自动清理，无需手动关联删除
+- `INDEX idx_session_id`：加速按会话查询消息
+
+### 8.2 后端 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/sessions` | 获取会话列表（按 updated_at DESC） |
+| POST | `/api/sessions` | 创建会话 `{ id, title }` |
+| PATCH | `/api/sessions/:id` | 重命名 `{ title }` |
+| DELETE | `/api/sessions/:id` | 删除（CASCADE 删消息） |
+| GET | `/api/sessions/:id/messages` | 加载历史消息 |
+| POST | `/api/sessions/:id/messages` | 批量保存消息（覆盖写入） |
+
+### 8.3 消息保存时机
+
+```
+SSE 流结束后
+  → sendMessage() finally 块
+    → persistMessages(sessionId)
+      → POST /api/sessions/:id/messages
+        { messages: [userMsg, assistantMsg] }
+
+用户点击"停止"
+  → stopStreaming(sessionId)
+    → persistMessages(sessionId)
+      → POST /api/sessions/:id/messages
+```
+
+**为什么用"覆盖写入"而非"追加"？** 简化实现——每次保存时 DELETE 旧消息 + INSERT 新消息，在事务中完成。避免处理"哪些消息已保存、哪些是新增"的增量逻辑。
+
+### 8.4 MySQL 连接管理
+
+> 文件：`react-node/src/db.ts`
+
+```typescript
+const pool = mysql.createPool({
+  host: 'localhost', port: 3306,
+  user: 'root',
+  password: process.env.MYSQL_PASSWORD || '',
+  database: 'cms_chat',
+  waitForConnections: true,
+  connectionLimit: 10,
+});
+
+// 启动时自动初始化
+export async function initDB() {
+  // 1. 临时连接 → CREATE DATABASE IF NOT EXISTS
+  // 2. 连接池 → CREATE TABLE IF NOT EXISTS sessions / messages
+}
+```
+
+**关键**：DDL 语句（CREATE DATABASE/TABLE）必须用 `query()` 而非 `execute()`，因为 mysql2 的 prepared statement 协议不支持 DDL。
+
+### 8.5 降级策略
+
+```typescript
+// index.ts 启动时
+try {
+  await initDB();
+} catch (err) {
+  console.error('数据库初始化失败，将以无持久化模式运行:', err);
+  // 服务继续运行，不影响 SSE 聊天功能
+}
+
+// Store 中 API 调用
+try { await saveMessagesAPI(id, msgs); }
+catch (err) { console.error('持久化失败:', err); }
+// 静默失败，不阻断用户操作
+```
+
+数据库故障不会导致应用崩溃，聊天功能可降级为纯内存模式运行。
+
+---
+
+## 9. CSS 动画体系
 
 ### 整体策略
 
@@ -1263,7 +1467,7 @@ ready 阶段（500ms 后）：
 
 ---
 
-## 8. 性能优化策略
+## 10. 性能优化策略
 
 ### 8.1 虚拟滚动（react-virtuoso）
 
@@ -1291,7 +1495,7 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 
 ### 8.5 ECharts 按需加载
 
-见 [6.5.1 节](#651-echarts-按需加载)。
+见 [6.8.1 节](#681-echarts-按需加载)。
 
 ### 8.6 CSS 合成层
 
@@ -1299,9 +1503,9 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 
 ---
 
-## 9. 边界场景与容错
+## 11. 边界场景与容错
 
-### 9.1 容错矩阵
+### 11.1 容错矩阵
 
 | 场景 | 问题 | 处理层 | 处理方式 |
 |------|------|--------|----------|
@@ -1322,8 +1526,17 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 | HTTP 错误 | 4xx/5xx | catch 块 | 显示 `❌ 请求失败：HTTP xxx` |
 | 网络断开 | fetch 失败 | catch 块 | 显示 `❌ 请求失败：网络错误` |
 | 空消息 | input.trim() 为空 | `handleSend` 入口 | `return` 直接拒绝 |
+| 数据库连接失败 | MySQL 不可用 | `initDB()` catch | 日志警告，服务以无持久化模式继续运行 |
+| 持久化 API 失败 | 网络/数据库错误 | `persistMessages()` catch | 静默失败，不影响聊天，数据保留在内存中 |
+| 历史消息加载失败 | 网络/数据库错误 | `loadMessages()` catch | 日志警告，会话保持空消息状态 |
+| 会话 API 创建失败 | 网络/数据库错误 | `createSession()` catch | 仅本地创建，后端无记录 |
+| 并发 SSE 过多 | 用户快速在多个会话中发消息 | AbortController Map | 每个独立管理，无限制（后期可加 `maxConcurrentStreams`） |
+| 删除正在流式的会话 | deleteSession(id) | `deleteSession()` | 先 `abort()` 再 `DELETE API`，再移除本地 |
+| 切换回空消息会话 | setActiveSession(id) | `setActiveSession()` | 自动触发 `loadMessages(id)` |
+| 重复创建会话（ID 冲突） | POST sessions 返回 409 | `createSessionAPI` catch | 仅本地创建，使用前端生成的唯一 ID |
+| 页面刷新后恢复 | 所有内存数据丢失 | `initStore()` | GET /api/sessions → 恢复列表 → 自动加载首会话消息 |
 
-### 9.2 测试关键词（后端已实现）
+### 11.2 测试关键词（后端已实现）
 
 | 关键词 | 模拟场景 |
 |--------|----------|
@@ -1336,7 +1549,7 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 | `图表` | 一次性图表演示（三种图表类型） |
 | `表格` | 一次性纯表格演示 |
 
-### 9.3 两种推送模式对比
+### 11.3 两种推送模式对比
 
 | 维度 | 一次性模式 | 逐块模式（新增） |
 |------|-----------|-----------------|
@@ -1350,9 +1563,9 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 
 ---
 
-## 10. 扩展指南
+## 12. 扩展指南
 
-### 10.1 接入真实 LLM API
+### 12.1 接入真实 LLM API
 
 1. 修改 `aiService.ts` 的 `generateStream`：
    ```typescript
@@ -1376,7 +1589,7 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 
 2. 如果 LLM 支持 function calling，可以在 function 返回时插入 `table_data` 或 `chart_data` 事件。
 
-### 10.2 添加新的内容块类型
+### 12.2 添加新的内容块类型
 
 1. 在 `chat.ts` 添加类型：
    ```typescript
@@ -1397,7 +1610,7 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 
 4. 如需支持逐块加载（流式生成），在 `SSEEventType` 添加对应事件类型（如 `image_chunk`），并在 `aiService.ts` 中编写生成器。
 
-### 10.5 扩展逐块模式到其他场景
+### 12.6 扩展逐块模式到其他场景
 
 `data_chunk` 协议的通用性允许它扩展到任何需要逐步推送的数据类型。扩展步骤：
 1. 后端：在 `SSEDataChunkEvent.data` 中添加新字段（如 `imageUrl`）
@@ -1405,25 +1618,26 @@ setMessages(prev => { /* 基于 prev 计算 */ });
 3. 渲染器：支持增量数据更新（类似 DataTableRenderer 的逐行追加）
 4. SSE 解析器的 switch：如需新的一次性事件类型，转化为 `handleDataChunk` 调用即可
 
-### 10.3 支持历史消息加载
+### 12.3 支持历史消息分页加载
+
+当前历史消息一次性全量加载（GET /api/sessions/:id/messages）。如果消息量很大，可改为分页：
 
 ```typescript
-// sbsjjc/index.tsx 中添加：
-const [hasMore, setHasMore] = useState(true);
+// 后端添加分页参数
+GET /api/sessions/:id/messages?offset=0&limit=50
 
-const loadMore = useCallback(async () => {
-  const olderMessages = await fetchHistoryMessages(cursor);
-  setMessages(prev => [...olderMessages, ...prev]);
-}, []);
-
-// Virtuoso 添加：
+// 前端添加 Virtuoso startReached
 <Virtuoso
   firstItemIndex={olderCount}
-  startReached={loadMore}
+  startReached={loadMore}  // 滚动到顶部时加载更早消息
 />
 ```
 
-### 10.4 国际化
+### 12.4 接入真实 LLM API
+
+见 [12.1](#121-接入真实-llm-api)。
+
+### 12.5 国际化
 
 `stageConfig` 中的 `label` 是目前唯一的中文硬编码。抽取为 i18n key 即可支持多语言。
 
@@ -1433,23 +1647,27 @@ const loadMore = useCallback(async () => {
 
 | 想了解的内容 | 看哪个文件 | 关键位置 |
 |-------------|-----------|----------|
-| 所有类型定义 | `src/types/chat.ts` | 全文 136 行 |
-| SSE 解析器整体流程 | `src/pages/sbsjjc/index.tsx` | `handleSend` 函数 |
-| 一次性+逐块统一入口 | `src/pages/sbsjjc/index.tsx` | `handleDataChunk` 函数 |
-| text 块累积为什么新建对象 | `src/pages/sbsjjc/index.tsx` | `case "text"` |
-| 一次性事件如何转化为 chunk | `src/pages/sbsjjc/index.tsx` | `case "table_data"` / `case "chart_data"` |
-| 行缓冲模式 | `src/pages/sbsjjc/index.tsx` | lineBuffer 相关 |
+| 所有类型定义（含 ChatSession） | `src/types/chat.ts` | 全文 |
+| **多会话 Zustand Store** | `src/store/useChatStore.ts` | 全文 ~500 行 |
+| SSE 解析 + sendMessage 循环 | `src/store/useChatStore.ts` | `sendMessage` 方法 |
+| 一次性+逐块统一入口 | `src/store/useChatStore.ts` | `handleDataChunk` 函数 |
+| 切换会话不中断机制 | `src/store/useChatStore.ts` | `abortControllers` Map + `setActiveSession` |
+| 历史消息自动加载 | `src/store/useChatStore.ts` | `setActiveSession` + `loadMessages` |
+| 消息持久化到 MySQL | `src/store/useChatStore.ts` | `persistMessages` + `sendMessage` finally |
+| 前端 API 调用封装 | `src/api/chat.ts` | 全文 |
+| 页面编排入口 | `src/pages/sbsjjc/index.tsx` | 全文 30 行 |
+| 会话侧边栏 | `src/components/Chat/SessionSidebar.tsx` | 全文 |
+| 聊天面板 | `src/components/Chat/ChatPanel.tsx` | 全文 |
 | React.memo 自定义比较（含深度检查） | `src/components/Chat/ChatMessageItem.tsx` | comparator 函数 |
 | ContentBlockRenderer + isLoading | `src/components/Chat/ChatMessageItem.tsx` | `ContentBlockRenderer` |
 | 思考过程状态计算 | `src/components/Chat/ThinkingProcess.tsx` | activeStage 计算 |
 | 三阶段状态机 + chunk 兼容 | `src/components/Chat/DataTableRenderer.tsx` | `phase` + `useEffect` |
 | 逐行 slide-in 动画 | `src/components/Chat/DataTableRenderer.tsx` | `@keyframes rowSlideIn` |
-| chunk 残缺数据兜底 | `src/components/Chat/DataTableRenderer.tsx` | `isValid` 检查 |
 | ECharts 按需加载 | `src/components/Chat/DataChartRenderer.tsx` | `echarts.use([...])` |
 | notMerge=false 增量更新 | `src/components/Chat/DataChartRenderer.tsx` | `<ReactECharts notMerge={false}>` |
-| chart config 缺 loss 兜底 | `src/pages/sbsjjc/index.tsx` | `handleDataChunk` chart 分支的 `chunk.config \|\| ...` |
-| CSS 过渡双层结构 | `src/components/Chat/DataTableRenderer.tsx` | skeleton + table 层 |
 | Markdown 安全修补 | `src/utils/sanitizeStreamingMarkdown.ts` | 全文 |
+| MySQL 连接池 + 表初始化 | `react-node/src/db.ts` | 全文 |
+| 会话 CRUD API | `react-node/src/routes/sessions.ts` | 全文 |
 | 后端事件生成器（一次性） | `react-node/src/services/aiService.ts` | `generateDemoFlow` 等 |
 | 后端逐块生成器 | `react-node/src/services/aiService.ts` | `generateChunkedFlow` |
 | 后端延迟策略 | `react-node/src/routes/chat.ts` | delay switch |

@@ -9,6 +9,14 @@ import type {
   ChartContent,
   SSEDataChunkData,
 } from "@/types/chat";
+import {
+  fetchSessions,
+  createSessionAPI,
+  deleteSessionAPI,
+  renameSessionAPI,
+  fetchMessages,
+  saveMessagesAPI,
+} from "@/api/chat";
 
 // ==================== 模块级闭包（不可序列化） ====================
 
@@ -23,21 +31,27 @@ const generateId = (prefix: string) => `${prefix}_${++idCounter}_${Date.now()}`;
 interface ChatStoreState {
   sessions: ChatSession[];
   activeSessionId: string | null;
+  /** 是否正在从后端加载历史消息 */
+  isLoadingMessages: boolean;
 
   // ---- 派生 ----
   getActiveSession: () => ChatSession | undefined;
   getSession: (id: string) => ChatSession | undefined;
 
+  // ---- 初始化 ----
+  initStore: () => Promise<void>;
+
   // ---- 会话 CRUD ----
-  createSession: (title?: string) => string;
-  deleteSession: (id: string) => void;
-  renameSession: (id: string, title: string) => void;
+  createSession: (title?: string) => Promise<string>;
+  deleteSession: (id: string) => Promise<void>;
+  renameSession: (id: string, title: string) => Promise<void>;
   setActiveSession: (id: string) => void;
 
   // ---- 输入草稿 ----
   setDraftInput: (sessionId: string, value: string) => void;
 
-  // ---- 消息操作（供 sendMessage 内部调用） ----
+  // ---- 消息操作 ----
+  loadMessages: (sessionId: string) => Promise<void>;
   flushMessages: (
     sessionId: string,
     assistantId: string,
@@ -45,6 +59,8 @@ interface ChatStoreState {
     thinkingStages: ThinkingStage[],
     isStreaming: boolean,
   ) => void;
+  /** 将内存中的消息持久化到后端 */
+  persistMessages: (sessionId: string) => Promise<void>;
 
   // ---- 流式控制 ----
   sendMessage: (sessionId: string, content: string) => Promise<void>;
@@ -57,6 +73,7 @@ interface ChatStoreState {
 export const useChatStore = create<ChatStoreState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
+  isLoadingMessages: false,
 
   // ---- 派生 ----
 
@@ -69,14 +86,92 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     return get().sessions.find((s) => s.id === id);
   },
 
+  // ---- 初始化 ----
+
+  initStore: async () => {
+    try {
+      const sessions = await fetchSessions();
+      if (sessions.length > 0) {
+        set({
+          sessions,
+          activeSessionId: sessions[0].id,
+        });
+      } else {
+        // 后端无会话，创建一个
+        await get().createSession("新对话");
+      }
+    } catch (err) {
+      console.error("[store] 初始化失败，使用本地模式:", err);
+      // 降级：如果加载失败，本地创建一个会话
+      if (get().sessions.length === 0) {
+        const id = generateId("session");
+        const now = Date.now();
+        set({
+          sessions: [
+            {
+              id,
+              title: "新对话",
+              messages: [],
+              createdAt: now,
+              updatedAt: now,
+              isStreaming: false,
+              draftInput: "",
+            },
+          ],
+          activeSessionId: id,
+        });
+      }
+    }
+  },
+
+  // ---- 加载历史消息 ----
+
+  loadMessages: async (sessionId: string) => {
+    set({ isLoadingMessages: true });
+    try {
+      const messages = await fetchMessages(sessionId);
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, messages } : s,
+        ),
+      }));
+    } catch (err) {
+      console.error("[store] 加载历史消息失败:", err);
+    } finally {
+      set({ isLoadingMessages: false });
+    }
+  },
+
+  // ---- 持久化消息 ----
+
+  persistMessages: async (sessionId: string) => {
+    const session = get().getSession(sessionId);
+    if (!session || session.messages.length === 0) return;
+
+    try {
+      await saveMessagesAPI(sessionId, session.messages);
+    } catch (err) {
+      console.error("[store] 持久化消息失败:", err);
+    }
+  },
+
   // ---- 会话 CRUD ----
 
-  createSession: (title?: string) => {
+  createSession: async (title?: string) => {
     const id = generateId("session");
     const now = Date.now();
+    const sessionTitle = title || "新对话";
+
+    // 先尝试持久化到后端
+    try {
+      await createSessionAPI(id, sessionTitle);
+    } catch (err) {
+      console.error("[store] 创建会话 API 失败，仅本地创建:", err);
+    }
+
     const newSession: ChatSession = {
       id,
-      title: title || `新对话`,
+      title: sessionTitle,
       messages: [],
       createdAt: now,
       updatedAt: now,
@@ -90,18 +185,24 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     return id;
   },
 
-  deleteSession: (id: string) => {
-    // 先终止该会话的 SSE 连接
+  deleteSession: async (id: string) => {
+    // 先终止 SSE 连接
     const ctrl = abortControllers.get(id);
     if (ctrl) {
       ctrl.abort();
       abortControllers.delete(id);
     }
 
+    // 从后端删除
+    try {
+      await deleteSessionAPI(id);
+    } catch (err) {
+      console.error("[store] 删除会话 API 失败:", err);
+    }
+
     set((state) => {
       const filtered = state.sessions.filter((s) => s.id !== id);
       let nextActive = state.activeSessionId;
-      // 如果删除的是活跃会话，切换到第一个剩余会话
       if (state.activeSessionId === id) {
         nextActive = filtered.length > 0 ? filtered[0].id : null;
       }
@@ -109,16 +210,30 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
-  renameSession: (id: string, title: string) => {
+  renameSession: async (id: string, title: string) => {
+    // 先更新本地（乐观更新）
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === id ? { ...s, title, updatedAt: Date.now() } : s,
       ),
     }));
+
+    // 再同步到后端
+    try {
+      await renameSessionAPI(id, title);
+    } catch (err) {
+      console.error("[store] 重命名 API 失败:", err);
+    }
   },
 
   setActiveSession: (id: string) => {
     set({ activeSessionId: id });
+
+    // 如果切换到的会话还没有消息，尝试从后端加载历史
+    const session = get().getSession(id);
+    if (session && session.messages.length === 0 && !session.isStreaming) {
+      get().loadMessages(id);
+    }
   },
 
   // ---- 输入草稿 ----
@@ -458,12 +573,15 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
         contentBlocks.push({ type: "text", text: `❌ 请求失败：${errMsg}` });
       }
     } finally {
-      // 清理并标记流式完成
+      // 清理 AbortController
       abortControllers.delete(sessionId);
+
       // 确认会话仍存在再更新
       const stillExists = get().getSession(sessionId);
       if (stillExists) {
         get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, false);
+        // SSE 流结束后持久化消息到后端
+        get().persistMessages(sessionId);
       }
     }
   },
@@ -480,6 +598,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
         s.id === sessionId ? { ...s, isStreaming: false } : s,
       ),
     }));
+    // 停止时也持久化当前消息
+    get().persistMessages(sessionId);
   },
 
   stopAllStreaming: () => {

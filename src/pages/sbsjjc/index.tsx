@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useChatStore } from "@/store/useChatStore";
 import SessionSidebar from "@/components/Chat/SessionSidebar";
 import ChatPanel from "@/components/Chat/ChatPanel";
@@ -6,14 +6,18 @@ import "./index.css";
 
 const Sbsjjc: React.FC = () => {
   const sessions = useChatStore((s) => s.sessions);
-  const createSession = useChatStore((s) => s.createSession);
+  const initStore = useChatStore((s) => s.initStore);
+  const initializedRef = useRef(false);
 
-  // 初始化：如果没有会话，自动创建一个
   useEffect(() => {
+    // 只初始化一次（防止 StrictMode 重复调用）
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     if (sessions.length === 0) {
-      createSession("新对话");
+      initStore();
     }
-  }, [sessions.length, createSession]);
+  }, [sessions.length, initStore]);
 
   return (
     <div className="sbsjjc-chat">

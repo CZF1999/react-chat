@@ -11,6 +11,7 @@ const ChatPanel: React.FC = () => {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopStreaming = useChatStore((s) => s.stopStreaming);
   const setDraftInput = useChatStore((s) => s.setDraftInput);
+  const isLoadingMessages = useChatStore((s) => s.isLoadingMessages);
 
   const [atBottom, setAtBottom] = useState(true);
   const [scrollTrigger, setScrollTrigger] = useState(0);
@@ -100,7 +101,11 @@ const ChatPanel: React.FC = () => {
 
       {/* 消息列表 */}
       <div className="sbsjjc-chat__body">
-        {messages.length === 0 ? (
+        {isLoadingMessages ? (
+          <div className="sbsjjc-chat__empty">
+            <p>⏳ 加载历史消息中...</p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="sbsjjc-chat__empty">
             <p>👋 发送一条消息开始对话</p>
             <p className="sbsjjc-chat__empty-hint">
