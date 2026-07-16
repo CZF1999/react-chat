@@ -36,3 +36,15 @@ export interface GetAsyncRouterParams {
 export interface GetUserInfoParams {
     token: string;
 }
+
+interface childData {
+    id: string;
+    pid: string;
+}
+export interface childInfo {
+    height: number;
+    weight: number;
+    age: number[];
+    name: string;
+    data: childData;
+}

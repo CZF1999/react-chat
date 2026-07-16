@@ -1,17 +1,22 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "@/store/useChatStore";
 import { ChatMessageItem } from "@/components/Chat/ChatMessageItem";
+import { ScrollToBottomButton } from "@/components/Chat/ScrollToBottomButton";
 
 const ChatPanel: React.FC = () => {
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const session = useChatStore((s) =>
-    s.sessions.find((sess) => sess.id === s.activeSessionId),
+  const { activeSessionId, session } = useChatStore(
+    useShallow((s) => ({
+      activeSessionId: s.activeSessionId,
+      session: s.sessions.find((sess) => sess.id === s.activeSessionId),
+    })),
   );
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopStreaming = useChatStore((s) => s.stopStreaming);
   const setDraftInput = useChatStore((s) => s.setDraftInput);
   const isLoadingMessages = useChatStore((s) => s.isLoadingMessages);
+  const loadMoreMessages = useChatStore((s) => s.loadMoreMessages);
 
   const [atBottom, setAtBottom] = useState(true);
   const [scrollTrigger, setScrollTrigger] = useState(0);
@@ -45,6 +50,13 @@ const ChatPanel: React.FC = () => {
       }, 50);
     }
   }, [messages.length]);
+
+  const scrollToBottom = useCallback(() => {
+    virtuosoRef.current?.scrollToIndex({
+      index: "LAST",
+      behavior: "smooth",
+    });
+  }, []);
 
   const handleSend = useCallback(() => {
     if (!activeSessionId || !inputValue.trim() || isStreaming) return;
@@ -100,7 +112,7 @@ const ChatPanel: React.FC = () => {
       </div>
 
       {/* 消息列表 */}
-      <div className="sbsjjc-chat__body">
+      <div className="sbsjjc-chat__body" style={{ position: "relative" }}>
         {isLoadingMessages ? (
           <div className="sbsjjc-chat__empty">
             <p>⏳ 加载历史消息中...</p>
@@ -126,7 +138,34 @@ const ChatPanel: React.FC = () => {
             itemContent={(_index, msg) => <ChatMessageItem message={msg} />}
             increaseViewportBy={{ top: 400, bottom: 400 }}
             style={{ height: "100%" }}
+            components={{
+              Header: () =>
+                session?.hasMoreOlder ? (
+                  <div style={{ textAlign: "center", padding: "10px 0" }}>
+                    <button
+                      className="sbsjjc-chat__load-older-btn"
+                      onClick={() =>
+                        activeSessionId && loadMoreMessages(activeSessionId)
+                      }
+                      disabled={session?.isLoadingOlder}
+                      style={{
+                        background: "none",
+                        border: "1px solid #d9d9d9",
+                        borderRadius: 6,
+                        padding: "4px 16px",
+                        cursor: session?.isLoadingOlder ? "not-allowed" : "pointer",
+                        opacity: session?.isLoadingOlder ? 0.5 : 1,
+                      }}
+                    >
+                      {session?.isLoadingOlder ? "加载中..." : "加载更早的消息"}
+                    </button>
+                  </div>
+                ) : null,
+            }}
           />
+        )}
+        {!atBottom && messages.length > 0 && !isLoadingMessages && (
+          <ScrollToBottomButton onClick={scrollToBottom} />
         )}
       </div>
 

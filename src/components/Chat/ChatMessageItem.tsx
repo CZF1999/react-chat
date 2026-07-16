@@ -140,6 +140,6 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
       }
     }
 
-    return true;
+    return true;  // 所有检查通过，跳过渲染
   },
 );

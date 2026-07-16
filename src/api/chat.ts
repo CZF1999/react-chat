@@ -77,14 +77,22 @@ export async function renameSessionAPI(
 
 // ==================== 消息 API ====================
 
-/** 获取某会话的历史消息 */
+/** 获取某会话的历史消息（支持分页） */
 export async function fetchMessages(
   sessionId: string,
-): Promise<ChatMessage[]> {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/messages`);
+  offset = 0,
+  limit = 50,
+): Promise<{ messages: ChatMessage[]; total: number; hasMoreOlder: boolean }> {
+  const params = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  });
+  const res = await fetch(
+    `${API_BASE}/sessions/${sessionId}/messages?${params}`,
+  );
   if (!res.ok) throw new Error("获取历史消息失败");
   const data = await res.json();
-  return (data.messages as MessageRow[]).map(
+  const messages = (data.messages as MessageRow[]).map(
     (row): ChatMessage => ({
       id: row.id,
       role: row.role,
@@ -95,6 +103,11 @@ export async function fetchMessages(
       isStreaming: false,
     }),
   );
+  return {
+    messages,
+    total: data.total ?? messages.length,
+    hasMoreOlder: data.hasMoreOlder ?? false,
+  };
 }
 
 /** 批量保存消息（覆盖该会话的所有消息） */

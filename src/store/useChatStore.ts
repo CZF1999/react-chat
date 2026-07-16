@@ -17,7 +17,7 @@ import {
   fetchMessages,
   saveMessagesAPI,
 } from "@/api/chat";
-
+import { devtools } from 'zustand/middleware';
 // ==================== 模块级闭包（不可序列化） ====================
 
 /** 每个会话独立的 AbortController，支持多 SSE 连接并发 */
@@ -52,6 +52,8 @@ interface ChatStoreState {
 
   // ---- 消息操作 ----
   loadMessages: (sessionId: string) => Promise<void>;
+  /** 加载更早的历史消息（分页） */
+  loadMoreMessages: (sessionId: string) => Promise<void>;
   flushMessages: (
     sessionId: string,
     assistantId: string,
@@ -70,10 +72,11 @@ interface ChatStoreState {
 
 // ==================== Store 实现 ====================
 
-export const useChatStore = create<ChatStoreState>((set, get) => ({
-  sessions: [],
-  activeSessionId: null,
-  isLoadingMessages: false,
+export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
+
+  sessions: [],  // 所有会话
+  activeSessionId: null,  // 当前活跃会话指针
+  isLoadingMessages: false,  // 是否正在加载历史消息
 
   // ---- 派生 ----
 
@@ -129,16 +132,57 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   loadMessages: async (sessionId: string) => {
     set({ isLoadingMessages: true });
     try {
-      const messages = await fetchMessages(sessionId);
+      const { messages, hasMoreOlder } = await fetchMessages(sessionId);
       set((state) => ({
         sessions: state.sessions.map((s) =>
-          s.id === sessionId ? { ...s, messages } : s,
+          s.id === sessionId ? { ...s, messages, hasMoreOlder } : s,
         ),
       }));
     } catch (err) {
       console.error("[store] 加载历史消息失败:", err);
     } finally {
       set({ isLoadingMessages: false });
+    }
+  },
+
+  // ---- 加载更早的历史消息（分页） ----
+
+  loadMoreMessages: async (sessionId: string) => {
+    const session = get().getSession(sessionId);
+    if (!session || session.isLoadingOlder || !session.hasMoreOlder) return;
+
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, isLoadingOlder: true } : s,
+      ),
+    }));
+
+    try {
+      const { messages, hasMoreOlder } = await fetchMessages(
+        sessionId,
+        session.messages.length,
+        50,
+      );
+      set((state) => ({
+        sessions: state.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          const existingIds = new Set(s.messages.map((m) => m.id));
+          const uniqueOlder = messages.filter((m) => !existingIds.has(m.id));
+          return {
+            ...s,
+            messages: [...uniqueOlder, ...s.messages],
+            hasMoreOlder,
+            isLoadingOlder: false,
+          };
+        }),
+      }));
+    } catch (err) {
+      console.error("[store] 加载更早消息失败:", err);
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, isLoadingOlder: false } : s,
+        ),
+      }));
     }
   },
 
@@ -258,9 +302,36 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) => {
         if (s.id !== sessionId) return s;
-        const idx = s.messages.findIndex((m) => m.id === assistantId);
+
+        const { messages } = s;
+        const lastIdx = messages.length - 1;
+        const targetMsg = messages[lastIdx];
+
+        // 快速路径：assistant 消息保证是最后一条（sendMessage 保证）
+        if (targetMsg && targetMsg.id === assistantId && targetMsg.role === "assistant") {
+          const updatedMessages = [...messages];
+          updatedMessages[lastIdx] = {
+            ...targetMsg,
+            contentBlocks: [...contentBlocks],
+            thinkingStages: [...thinkingStages],
+            content: contentBlocks
+              .filter((b): b is TextContent => b.type === "text")
+              .map((b) => b.text)
+              .join(""),
+            isStreaming,
+          };
+          return {
+            ...s,
+            messages: updatedMessages,
+            isStreaming,
+            updatedAt: Date.now(),
+          };
+        }
+
+        // 安全带：若不变式被破坏（极端情况），回退到 findIndex 扫描
+        const idx = messages.findIndex((m) => m.id === assistantId);
         if (idx === -1) return s;
-        const updatedMessages = [...s.messages];
+        const updatedMessages = [...messages];
         updatedMessages[idx] = {
           ...updatedMessages[idx],
           contentBlocks: [...contentBlocks],
@@ -331,6 +402,22 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       message: string;
     } | null = null;
 
+    // 节流状态：限制 flushMessages 调用频率到 ~30fps
+    let lastFlushTime = 0;
+    const FLUSH_INTERVAL_MS = 33;
+    let pendingFlush = false;
+
+    const throttledFlush = () => {
+      const now = Date.now();
+      if (now - lastFlushTime >= FLUSH_INTERVAL_MS) {
+        lastFlushTime = now;
+        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+        pendingFlush = false;
+      } else {
+        pendingFlush = true;
+      }
+    };
+
     /**
      * 统一的数据块处理函数
      * - index===0：创建新 block 并 push
@@ -368,9 +455,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
             chunk.config ||
             (chunk.xAxisData
               ? {
-                  xAxis: { type: "category", data: chunk.xAxisData },
-                  series: chunk.series || [],
-                }
+                xAxis: { type: "category", data: chunk.xAxisData },
+                series: chunk.series || [],
+              }
               : { series: chunk.series || [] });
           contentBlocks.push({
             type: "chart",
@@ -389,12 +476,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
               ];
               const newXAxis = chunk.xAxisData
                 ? {
-                    ...(existing.config.xAxis || {}),
-                    data: [
-                      ...((existing.config.xAxis as any)?.data || []),
-                      ...chunk.xAxisData,
-                    ],
-                  }
+                  ...(existing.config.xAxis || {}),
+                  data: [
+                    ...((existing.config.xAxis as any)?.data || []),
+                    ...chunk.xAxisData,
+                  ],
+                }
                 : existing.config.xAxis;
               contentBlocks[i] = {
                 ...existing,
@@ -534,9 +621,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
           }
         }
 
-        // 批量更新消息状态
+        // 批量更新消息状态（节流到 ~30fps）
         if (hasUpdates) {
-          get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+          throttledFlush();
         }
       }
 
@@ -566,6 +653,11 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
             }
           }
         }
+      }
+
+      // 排空节流中积压的最后一次刷新
+      if (pendingFlush) {
+        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
       }
     } catch (err: any) {
       if (err.name !== "AbortError") {
@@ -609,4 +701,4 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       sessions: state.sessions.map((s) => ({ ...s, isStreaming: false })),
     }));
   },
-}));
+})));

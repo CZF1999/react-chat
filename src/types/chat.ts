@@ -148,4 +148,8 @@ export interface ChatSession {
   isStreaming: boolean;
   /** 切换会话时保留的输入框草稿 */
   draftInput?: string;
+  /** 服务端是否存在更早的历史消息（分页加载用） */
+  hasMoreOlder?: boolean;
+  /** 是否正在加载更早的消息 */
+  isLoadingOlder?: boolean;
 }
