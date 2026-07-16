@@ -10,7 +10,7 @@ function sleep(ms: number): Promise<void> {
 
 // POST /api/chat - SSE 流式聊天接口（结构化事件）
 router.post('/', async (req: Request, res: Response) => {
-  const { message } = req.body as { message?: string };
+  const { message, sessionId } = req.body as { message?: string; sessionId?: string };
 
   // 校验输入
   if (!message || typeof message !== 'string' || !message.trim()) {
@@ -33,7 +33,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   // 生成结构化事件数组
   const events = generateStream(message.trim());
-  console.log(`[chat] 共 ${events.length} 个事件，SSE 结构化流式输出`);
+  console.log(`[chat] session=${sessionId || 'anonymous'} 共 ${events.length} 个事件，SSE 结构化流式输出`);
 
   // JSON 容错测试：在事件流中注入原始文本
   const isJsonFallbackTest = /json.*错误|容错|fallback/.test(message.trim().toLowerCase());

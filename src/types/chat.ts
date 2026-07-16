@@ -135,3 +135,17 @@ export interface SSEEvent {
   type: SSEEventType;
   data: SSEThinkingData | SSETextData | SSETableData | SSEChartData | SSEDataChunkData | null;
 }
+
+// ==================== 会话模型 ====================
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  /** 该会话是否正在流式接收中 */
+  isStreaming: boolean;
+  /** 切换会话时保留的输入框草稿 */
+  draftInput?: string;
+}

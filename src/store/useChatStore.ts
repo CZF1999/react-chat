@@ -1,0 +1,492 @@
+import { create } from "zustand";
+import type {
+  ChatMessage,
+  ChatSession,
+  MessageContent,
+  ThinkingStage,
+  TextContent,
+  TableContent,
+  ChartContent,
+  SSEDataChunkData,
+} from "@/types/chat";
+
+// ==================== 模块级闭包（不可序列化） ====================
+
+/** 每个会话独立的 AbortController，支持多 SSE 连接并发 */
+const abortControllers = new Map<string, AbortController>();
+
+let idCounter = 0;
+const generateId = (prefix: string) => `${prefix}_${++idCounter}_${Date.now()}`;
+
+// ==================== Store 类型 ====================
+
+interface ChatStoreState {
+  sessions: ChatSession[];
+  activeSessionId: string | null;
+
+  // ---- 派生 ----
+  getActiveSession: () => ChatSession | undefined;
+  getSession: (id: string) => ChatSession | undefined;
+
+  // ---- 会话 CRUD ----
+  createSession: (title?: string) => string;
+  deleteSession: (id: string) => void;
+  renameSession: (id: string, title: string) => void;
+  setActiveSession: (id: string) => void;
+
+  // ---- 输入草稿 ----
+  setDraftInput: (sessionId: string, value: string) => void;
+
+  // ---- 消息操作（供 sendMessage 内部调用） ----
+  flushMessages: (
+    sessionId: string,
+    assistantId: string,
+    contentBlocks: MessageContent[],
+    thinkingStages: ThinkingStage[],
+    isStreaming: boolean,
+  ) => void;
+
+  // ---- 流式控制 ----
+  sendMessage: (sessionId: string, content: string) => Promise<void>;
+  stopStreaming: (sessionId: string) => void;
+  stopAllStreaming: () => void;
+}
+
+// ==================== Store 实现 ====================
+
+export const useChatStore = create<ChatStoreState>((set, get) => ({
+  sessions: [],
+  activeSessionId: null,
+
+  // ---- 派生 ----
+
+  getActiveSession: () => {
+    const { sessions, activeSessionId } = get();
+    return sessions.find((s) => s.id === activeSessionId);
+  },
+
+  getSession: (id: string) => {
+    return get().sessions.find((s) => s.id === id);
+  },
+
+  // ---- 会话 CRUD ----
+
+  createSession: (title?: string) => {
+    const id = generateId("session");
+    const now = Date.now();
+    const newSession: ChatSession = {
+      id,
+      title: title || `新对话`,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      isStreaming: false,
+      draftInput: "",
+    };
+    set((state) => ({
+      sessions: [...state.sessions, newSession],
+      activeSessionId: id,
+    }));
+    return id;
+  },
+
+  deleteSession: (id: string) => {
+    // 先终止该会话的 SSE 连接
+    const ctrl = abortControllers.get(id);
+    if (ctrl) {
+      ctrl.abort();
+      abortControllers.delete(id);
+    }
+
+    set((state) => {
+      const filtered = state.sessions.filter((s) => s.id !== id);
+      let nextActive = state.activeSessionId;
+      // 如果删除的是活跃会话，切换到第一个剩余会话
+      if (state.activeSessionId === id) {
+        nextActive = filtered.length > 0 ? filtered[0].id : null;
+      }
+      return { sessions: filtered, activeSessionId: nextActive };
+    });
+  },
+
+  renameSession: (id: string, title: string) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === id ? { ...s, title, updatedAt: Date.now() } : s,
+      ),
+    }));
+  },
+
+  setActiveSession: (id: string) => {
+    set({ activeSessionId: id });
+  },
+
+  // ---- 输入草稿 ----
+
+  setDraftInput: (sessionId: string, value: string) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, draftInput: value } : s,
+      ),
+    }));
+  },
+
+  // ---- 消息操作 ----
+
+  flushMessages: (
+    sessionId: string,
+    assistantId: string,
+    contentBlocks: MessageContent[],
+    thinkingStages: ThinkingStage[],
+    isStreaming: boolean,
+  ) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        const idx = s.messages.findIndex((m) => m.id === assistantId);
+        if (idx === -1) return s;
+        const updatedMessages = [...s.messages];
+        updatedMessages[idx] = {
+          ...updatedMessages[idx],
+          contentBlocks: [...contentBlocks],
+          thinkingStages: [...thinkingStages],
+          content: contentBlocks
+            .filter((b): b is TextContent => b.type === "text")
+            .map((b) => b.text)
+            .join(""),
+          isStreaming,
+        };
+        return {
+          ...s,
+          messages: updatedMessages,
+          isStreaming,
+          updatedAt: Date.now(),
+        };
+      }),
+    }));
+  },
+
+  // ---- 流式控制 ----
+
+  sendMessage: async (sessionId: string, content: string) => {
+    const session = get().getSession(sessionId);
+    if (!session) return;
+    if (!content.trim()) return;
+
+    const assistantId = generateId("msg");
+
+    // Step 1: 添加用户消息 + AI 占位消息
+    const userMsg: ChatMessage = {
+      id: generateId("msg"),
+      role: "user",
+      content,
+      createdAt: Date.now(),
+    };
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      contentBlocks: [],
+      thinkingStages: [],
+      isStreaming: true,
+      createdAt: Date.now(),
+    };
+
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        return {
+          ...s,
+          messages: [...s.messages, userMsg, assistantMsg],
+          isStreaming: true,
+          updatedAt: Date.now(),
+        };
+      }),
+    }));
+
+    // Step 2: 创建独立的 AbortController
+    const controller = new AbortController();
+    abortControllers.set(sessionId, controller);
+
+    // 追踪当前流式状态
+    const contentBlocks: MessageContent[] = [];
+    const thinkingStages: ThinkingStage[] = [];
+    let pendingLoadingBlock: {
+      type: "table" | "chart";
+      message: string;
+    } | null = null;
+
+    /**
+     * 统一的数据块处理函数
+     * - index===0：创建新 block 并 push
+     * - index>0：找到同类 block，以新对象替换（追加数据）
+     */
+    const handleDataChunk = (chunk: SSEDataChunkData) => {
+      if (pendingLoadingBlock) pendingLoadingBlock = null;
+
+      if (chunk.chunkType === "table") {
+        if (chunk.index === 0) {
+          contentBlocks.push({
+            type: "table",
+            columns: chunk.columns!,
+            data: chunk.rows || [],
+            title: chunk.title,
+          } as TableContent);
+        } else {
+          for (let i = contentBlocks.length - 1; i >= 0; i--) {
+            const block = contentBlocks[i];
+            if (block.type === "table") {
+              contentBlocks[i] = {
+                ...block,
+                data: [
+                  ...(block as TableContent).data,
+                  ...(chunk.rows || []),
+                ],
+              } as TableContent;
+              break;
+            }
+          }
+        }
+      } else if (chunk.chunkType === "chart") {
+        if (chunk.index === 0) {
+          const baseConfig =
+            chunk.config ||
+            (chunk.xAxisData
+              ? {
+                  xAxis: { type: "category", data: chunk.xAxisData },
+                  series: chunk.series || [],
+                }
+              : { series: chunk.series || [] });
+          contentBlocks.push({
+            type: "chart",
+            chartType: chunk.chartType!,
+            title: chunk.title,
+            config: baseConfig,
+          } as ChartContent);
+        } else {
+          for (let i = contentBlocks.length - 1; i >= 0; i--) {
+            const block = contentBlocks[i];
+            if (block.type === "chart") {
+              const existing = block as ChartContent;
+              const newSeries = [
+                ...(existing.config.series || []),
+                ...(chunk.series || []),
+              ];
+              const newXAxis = chunk.xAxisData
+                ? {
+                    ...(existing.config.xAxis || {}),
+                    data: [
+                      ...((existing.config.xAxis as any)?.data || []),
+                      ...chunk.xAxisData,
+                    ],
+                  }
+                : existing.config.xAxis;
+              contentBlocks[i] = {
+                ...existing,
+                config: { ...existing.config, xAxis: newXAxis, series: newSeries },
+              } as ChartContent;
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    // SSE 读取循环
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: content, sessionId }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.body) throw new Error("不支持 ReadableStream");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let lineBuffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        lineBuffer += chunk;
+
+        const events = lineBuffer.split("\n\n");
+        lineBuffer = events.pop() || "";
+
+        let hasUpdates = false;
+
+        for (const rawEvent of events) {
+          for (const line of rawEvent.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+
+            const payload = line.slice(6);
+            if (payload === "[DONE]") continue;
+
+            try {
+              const event = JSON.parse(payload) as {
+                type: string;
+                data: any;
+              };
+
+              switch (event.type) {
+                case "thinking": {
+                  thinkingStages.push({
+                    type: event.data.stage,
+                    message: event.data.message,
+                    timestamp: Date.now(),
+                  });
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "text": {
+                  const textContent = event.data.content as string;
+                  const lastBlock = contentBlocks[contentBlocks.length - 1];
+                  if (lastBlock && lastBlock.type === "text") {
+                    contentBlocks[contentBlocks.length - 1] = {
+                      type: "text",
+                      text: (lastBlock as TextContent).text + textContent,
+                    };
+                  } else {
+                    contentBlocks.push({ type: "text", text: textContent });
+                  }
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "table_loading": {
+                  pendingLoadingBlock = {
+                    type: "table",
+                    message: event.data.message,
+                  };
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "table_data": {
+                  handleDataChunk({
+                    chunkType: "table",
+                    index: 0,
+                    columns: event.data.columns,
+                    rows: event.data.data,
+                    title: event.data.title,
+                  });
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "chart_loading": {
+                  pendingLoadingBlock = {
+                    type: "chart",
+                    message: event.data.message,
+                  };
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "chart_data": {
+                  handleDataChunk({
+                    chunkType: "chart",
+                    index: 0,
+                    chartType: event.data.chartType,
+                    config: event.data.config,
+                    title: event.data.title,
+                  });
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "data_chunk": {
+                  handleDataChunk(event.data as SSEDataChunkData);
+                  hasUpdates = true;
+                  break;
+                }
+
+                case "done": {
+                  break;
+                }
+              }
+            } catch {
+              // JSON 解析失败，当作纯文本处理
+              contentBlocks.push({ type: "text", text: payload });
+              hasUpdates = true;
+            }
+          }
+        }
+
+        // 批量更新消息状态
+        if (hasUpdates) {
+          get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+        }
+      }
+
+      // 处理缓冲区中的最后一段
+      if (lineBuffer.trim()) {
+        for (const line of lineBuffer.split("\n")) {
+          if (line.startsWith("data: ") && line.slice(6) !== "[DONE]") {
+            const payload = line.slice(6);
+            try {
+              const event = JSON.parse(payload);
+              if (event.type === "text") {
+                const lastBlock = contentBlocks[contentBlocks.length - 1];
+                if (lastBlock && lastBlock.type === "text") {
+                  contentBlocks[contentBlocks.length - 1] = {
+                    type: "text",
+                    text: (lastBlock as TextContent).text + event.data.content,
+                  };
+                } else {
+                  contentBlocks.push({
+                    type: "text",
+                    text: event.data.content,
+                  });
+                }
+              }
+            } catch {
+              contentBlocks.push({ type: "text", text: payload });
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        contentBlocks.push({ type: "text", text: `❌ 请求失败：${errMsg}` });
+      }
+    } finally {
+      // 清理并标记流式完成
+      abortControllers.delete(sessionId);
+      // 确认会话仍存在再更新
+      const stillExists = get().getSession(sessionId);
+      if (stillExists) {
+        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, false);
+      }
+    }
+  },
+
+  stopStreaming: (sessionId: string) => {
+    const ctrl = abortControllers.get(sessionId);
+    if (ctrl) {
+      ctrl.abort();
+      abortControllers.delete(sessionId);
+    }
+    // 立即更新 isStreaming 状态
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, isStreaming: false } : s,
+      ),
+    }));
+  },
+
+  stopAllStreaming: () => {
+    abortControllers.forEach((ctrl) => ctrl.abort());
+    abortControllers.clear();
+    set((state) => ({
+      sessions: state.sessions.map((s) => ({ ...s, isStreaming: false })),
+    }));
+  },
+}));
