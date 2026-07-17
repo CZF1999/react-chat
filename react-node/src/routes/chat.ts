@@ -8,9 +8,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// POST /api/chat - SSE 流式聊天接口（结构化事件）
+// POST /api/chat - SSE 流式聊天接口（支持 resumeFrom 续传）
 router.post('/', async (req: Request, res: Response) => {
-  const { message, sessionId } = req.body as { message?: string; sessionId?: string };
+  const { message, sessionId, resumeFrom } = req.body as {
+    message?: string;
+    sessionId?: string;
+    resumeFrom?: number;
+  };
 
   // 校验输入
   if (!message || typeof message !== 'string' || !message.trim()) {
@@ -31,9 +35,14 @@ router.post('/', async (req: Request, res: Response) => {
     req.socket.setNoDelay(true);
   }
 
-  // 生成结构化事件数组
-  const events = generateStream(message.trim());
-  console.log(`[chat] session=${sessionId || 'anonymous'} 共 ${events.length} 个事件，SSE 结构化流式输出`);
+  // 生成结构化事件数组（支持 resumeFrom 跳过已发送事件）
+  const allEvents = generateStream(message.trim());
+  const events = resumeFrom && resumeFrom > 0 ? allEvents.slice(resumeFrom) : allEvents;
+  console.log(
+    `[chat] session=${sessionId || 'anonymous'} 总事件 ${allEvents.length}，` +
+    (resumeFrom ? `跳过前 ${resumeFrom} 个，剩余 ${events.length} 个` : `全部 ${events.length} 个`) +
+    `，SSE 结构化流式输出`
+  );
 
   // JSON 容错测试：在事件流中注入原始文本
   const isJsonFallbackTest = /json.*错误|容错|fallback/.test(message.trim().toLowerCase());

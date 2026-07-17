@@ -5,11 +5,11 @@ const router = Router();
 
 // ==================== 会话 CRUD ====================
 
-/** GET /api/sessions - 获取所有会话列表（不含消息） */
+/** GET /api/sessions - 获取所有会话列表（不含消息，含暂停状态） */
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const [rows] = await db.pool.query(
-      'SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC'
+      'SELECT id, title, created_at, updated_at, is_paused, paused_message, resume_event_count FROM sessions ORDER BY updated_at DESC'
     );
     res.json({ sessions: rows });
   } catch (err) {
@@ -42,6 +42,49 @@ router.post('/', async (req: Request, res: Response) => {
     }
     console.error('[sessions] 创建失败:', err);
     res.status(500).json({ error: '创建会话失败' });
+  }
+});
+
+/** PATCH /api/sessions/:id/pause - 更新暂停状态 */
+router.patch('/:id/pause', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { isPaused, pausedMessage, resumeEventCount } = req.body as {
+    isPaused?: boolean;
+    pausedMessage?: string | null;
+    resumeEventCount?: number | null;
+  };
+
+  try {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (isPaused !== undefined) {
+      fields.push('is_paused = ?');
+      values.push(isPaused ? 1 : 0);
+    }
+    if (pausedMessage !== undefined) {
+      fields.push('paused_message = ?');
+      values.push(pausedMessage);
+    }
+    if (resumeEventCount !== undefined) {
+      fields.push('resume_event_count = ?');
+      values.push(resumeEventCount);
+    }
+
+    if (fields.length > 0) {
+      fields.push('updated_at = ?');
+      values.push(Date.now());
+      values.push(id);
+      await db.pool.query(
+        `UPDATE sessions SET ${fields.join(', ')} WHERE id = ?`,
+        values,
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[sessions] 更新暂停状态失败:', err);
+    res.status(500).json({ error: '更新暂停状态失败' });
   }
 });
 

@@ -7,6 +7,12 @@ import { DataChartRenderer } from "./DataChartRenderer";
 
 interface ChatMessageItemProps {
   message: ChatMessage;
+  /** 该消息是否为最后一条（用于显示继续按钮） */
+  isLast?: boolean;
+  /** 会话是否被暂停 */
+  isPaused?: boolean;
+  /** 点击继续的回调 */
+  onResume?: () => void;
 }
 
 /**
@@ -47,7 +53,7 @@ const ContentBlockRenderer: React.FC<{ block: MessageContent; isLoading?: boolea
 };
 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
-  ({ message }) => {
+  ({ message, isLast, isPaused, onResume }) => {
     const isUser = message.role === "user";
     const hasContentBlocks =
       message.contentBlocks && message.contentBlocks.length > 0;
@@ -98,6 +104,18 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
                   isStreaming={message.isStreaming}
                 />
               )}
+
+              {/* 暂停时显示继续按钮 */}
+              {isLast && isPaused && (
+                <div className="mt-2 text-center">
+                  <button
+                    onClick={onResume}
+                    className="px-4 py-1 bg-blue-500 text-white rounded-full text-sm hover:bg-blue-600 transition-colors"
+                  >
+                    ▶ 继续生成
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -105,6 +123,10 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = React.memo(
     );
   },
   (prev, next) => {
+    // 新增 props 变了就要重渲染
+    if (prev.isLast !== next.isLast) return false;
+    if (prev.isPaused !== next.isPaused) return false;
+
     // 自定义比较：深度比较 thinkingStages 和 contentBlocks
     const prevMsg = prev.message;
     const nextMsg = next.message;

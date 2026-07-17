@@ -14,6 +14,8 @@ const ChatPanel: React.FC = () => {
   );
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopStreaming = useChatStore((s) => s.stopStreaming);
+  const pauseStreaming = useChatStore((s) => s.pauseStreaming);
+  const resumeStreaming = useChatStore((s) => s.resumeStreaming);
   const setDraftInput = useChatStore((s) => s.setDraftInput);
   const isLoadingMessages = useChatStore((s) => s.isLoadingMessages);
   const loadMoreMessages = useChatStore((s) => s.loadMoreMessages);
@@ -66,6 +68,18 @@ const ChatPanel: React.FC = () => {
     }
   }, [activeSessionId, stopStreaming]);
 
+  const handlePause = useCallback(() => {
+    if (activeSessionId) {
+      pauseStreaming(activeSessionId);
+    }
+  }, [activeSessionId, pauseStreaming]);
+
+  const handleResume = useCallback(() => {
+    if (activeSessionId) {
+      resumeStreaming(activeSessionId);
+    }
+  }, [activeSessionId, resumeStreaming]);
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
@@ -103,7 +117,12 @@ const ChatPanel: React.FC = () => {
       <div className="sbsjjc-chat__header">
         <h2>{session?.title || "AI 对话"}</h2>
         <span style={{ fontSize: 11, color: "#999" }}>
-          {messages.length} 条消息{isStreaming && " · 接收中..."}
+          {messages.length} 条消息
+          {session?.isPaused
+            ? " · 已暂停"
+            : session?.isReconnecting
+              ? " · 重连中..."
+              : isStreaming && " · 接收中..."}
         </span>
       </div>
 
@@ -132,7 +151,14 @@ const ChatPanel: React.FC = () => {
             followOutput={atBottom ? "smooth" : false}
             atBottomStateChange={setAtBottom}
             itemKey={(msg) => msg.id}
-            itemContent={(_index, msg) => <ChatMessageItem message={msg} />}
+            itemContent={(index, msg) => (
+              <ChatMessageItem
+                message={msg}
+                isLast={index === messages.length - 1}
+                isPaused={session?.isPaused}
+                onResume={handleResume}
+              />
+            )}
             increaseViewportBy={{ top: 400, bottom: 400 }}
             style={{ height: "100%" }}
             components={{
@@ -171,25 +197,42 @@ const ChatPanel: React.FC = () => {
             type="text"
             className="sbsjjc-chat__input"
             placeholder="输入消息... 试试分析销售数据 (Enter 发送)"
-            disabled={isStreaming}
+            disabled={isStreaming || !!session?.isPaused}
             autoComplete="off"
             value={inputValue}
             onChange={handleInputChange}
           />
-          <button
-            type="submit"
-            className="sbsjjc-chat__send-btn"
-            disabled={isStreaming}
-          >
-            发送
-          </button>
-          {isStreaming && (
+          {session?.isPaused ? (
             <button
               type="button"
               className="sbsjjc-chat__stop-btn"
               onClick={handleStop}
             >
               停止
+            </button>
+          ) : isStreaming ? (
+            <>
+              <button
+                type="button"
+                className="sbsjjc-chat__send-btn"
+                onClick={handlePause}
+              >
+                暂停
+              </button>
+              <button
+                type="button"
+                className="sbsjjc-chat__stop-btn"
+                onClick={handleStop}
+              >
+                停止
+              </button>
+            </>
+          ) : (
+            <button
+              type="submit"
+              className="sbsjjc-chat__send-btn"
+            >
+              发送
             </button>
           )}
         </div>

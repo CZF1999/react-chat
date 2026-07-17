@@ -41,9 +41,23 @@ export async function initDB(): Promise<void> {
       \`title\` VARCHAR(255) NOT NULL DEFAULT '新对话',
       \`created_at\` BIGINT NOT NULL,
       \`updated_at\` BIGINT NOT NULL,
+      \`is_paused\` TINYINT NOT NULL DEFAULT 0,
+      \`paused_message\` TEXT DEFAULT NULL,
+      \`resume_event_count\` INT DEFAULT NULL,
       PRIMARY KEY (\`id\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  // 兼容已有数据库：添加暂停相关列（如果不存在）
+  for (const col of [
+    { name: 'is_paused', def: 'TINYINT NOT NULL DEFAULT 0' },
+    { name: 'paused_message', def: 'TEXT DEFAULT NULL' },
+    { name: 'resume_event_count', def: 'INT DEFAULT NULL' },
+  ]) {
+    try {
+      await pool.query(`ALTER TABLE \`sessions\` ADD COLUMN \`${col.name}\` ${col.def}`);
+    } catch { /* 列已存在，忽略 */ }
+  }
 
   // 创建消息表
   await pool.query(`

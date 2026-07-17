@@ -7,6 +7,9 @@ interface SessionRow {
   title: string;
   created_at: number;
   updated_at: number;
+  is_paused?: number;
+  paused_message?: string | null;
+  resume_event_count?: number | null;
 }
 
 interface MessageRow {
@@ -34,6 +37,9 @@ export async function fetchSessions(): Promise<ChatSession[]> {
       updatedAt: row.updated_at,
       isStreaming: false,
       draftInput: "",
+      isPaused: row.is_paused === 1,
+      pausedMessage: row.paused_message || undefined,
+      resumeEventCount: row.resume_event_count ?? undefined,
     }),
   );
 }
@@ -109,6 +115,19 @@ export async function fetchMessages(
     total,
     hasMoreOlder: pageNum * pageSize < total,
   };
+}
+
+/** 更新会话暂停状态 */
+export async function updatePauseStateAPI(
+  sessionId: string,
+  state: { isPaused: boolean; pausedMessage?: string | null; resumeEventCount?: number | null },
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/pause`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state),
+  });
+  if (!res.ok) throw new Error("更新暂停状态失败");
 }
 
 /** 批量保存消息（覆盖该会话的所有消息） */

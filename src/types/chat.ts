@@ -154,4 +154,12 @@ export interface ChatSession {
   hasMoreOlder?: boolean;
   /** 是否正在加载更早的消息 */
   isLoadingOlder?: boolean;
+  /** SSE 断线后是否正在重连 */
+  isReconnecting?: boolean;
+  /** 是否被用户暂停（保留部分回复，可继续） */
+  isPaused?: boolean;
+  /** 触发暂停时发送的原始消息（用于继续回复） */
+  pausedMessage?: string;
+  /** 暂停时的 SSE 事件计数（用于继续时跳过已消费事件） */
+  resumeEventCount?: number;
 }
