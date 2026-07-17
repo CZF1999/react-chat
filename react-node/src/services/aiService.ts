@@ -55,6 +55,8 @@ export interface SSEDataChunkEvent {
   type: 'data_chunk';
   data: {
     chunkType: 'table' | 'chart';
+    /** 同一数据块的 chunk 共享一个 blockId，用于前端乱序匹配 */
+    blockId: string;
     index: number;
     total?: number;
     columns?: { key: string; title: string; dataIndex: string; width?: number }[];
@@ -538,102 +540,155 @@ function* generateTextOnlyFlow(): Generator<SSEEvent> {
 }
 
 /**
- * 逐块流式演示：表格逐行追加，图表逐系列构建。
+ * 逐块流式演示：多表格 + 多图表乱序交织，测试 blockId 匹配。
  * 触发关键词：逐行, 追加, chunk, 分块, 逐条, 逐步
  */
 function* generateChunkedFlow(): Generator<SSEEvent> {
   // --- Phase 1: 介绍 ---
-  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在处理您的请求（逐块模式）...' } };
-  yield* generateTextEvents('好的，我将使用**逐块流式**模式展示数据。\n\n');
-  yield* generateTextEvents('> 📦 表格将**逐行追加**，图表将**逐系列构建**——您可以观察数据逐步到达的过程。\n\n');
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在处理您的请求（多块乱序模式）...' } };
+  yield* generateTextEvents('好的，我将使用**多数据块乱序交织**模式展示数据。\n\n');
+  yield* generateTextEvents('> 🔀 两张表格和两个图表的 chunk 将**交错发送**，验证前端 `blockId` 精确匹配机制。\n\n');
   yield { type: 'thinking', data: { stage: 'done', message: '准备就绪' } };
 
-  // --- Phase 2: 逐行表格 ---
-  yield { type: 'thinking', data: { stage: 'processing', message: '正在逐行加载表格数据...' } };
-  yield* generateTextEvents('## 销售数据（逐行加载）\n\n');
+  // ========== Phase 2: 两张表格乱序交织 ==========
+  yield { type: 'thinking', data: { stage: 'processing', message: '正在并行加载多张表格...' } };
+  yield* generateTextEvents('## 多表格乱序加载\n\n');
+  yield* generateTextEvents('后端并行查询两张表格，数据 chunk 交替到达：\n\n');
 
-  const tableRows = mockSalesTable.data;
-  // Chunk 0: columns + 第一行
+  const salesRows = mockSalesTable.data;       // 4 行
+  const userRows = mockUserTable.data.slice(0, 4); // 取前 4 行
+  const tableABlockId = 'interleaved-sales-table';
+  const tableBBlockId = 'interleaved-user-table';
+  const maxTableRows = Math.max(salesRows.length, userRows.length);
+
+  // Chunk 0: 两张表的首行 + 列定义（先发 A 再发 B）
+  yield* generateTextEvents('📊 发送 **销售表** 结构 + 首行...\n');
   yield {
     type: 'data_chunk',
     data: {
-      chunkType: 'table',
-      index: 0,
-      total: tableRows.length,
-      columns: mockSalesTable.columns,
-      title: mockSalesTable.title,
-      rows: [tableRows[0]],
+      chunkType: 'table', blockId: tableABlockId, index: 0,
+      total: salesRows.length, columns: mockSalesTable.columns,
+      title: mockSalesTable.title, rows: [salesRows[0]],
     },
   };
 
-  // Chunk 1..N-1: 每次追加一行
-  for (let i = 1; i < tableRows.length; i++) {
-    yield* generateTextEvents('.'); // 视觉反馈小点
-    yield {
-      type: 'data_chunk',
-      data: {
-        chunkType: 'table',
-        index: i,
-        total: tableRows.length,
-        rows: [tableRows[i]],
-      },
-    };
+  yield* generateTextEvents('👥 发送 **用户表** 结构 + 首行...\n');
+  yield {
+    type: 'data_chunk',
+    data: {
+      chunkType: 'table', blockId: tableBBlockId, index: 0,
+      total: userRows.length, columns: mockUserTable.columns,
+      title: mockUserTable.title, rows: [userRows[0]],
+    },
+  };
+
+  // Chunk 1..N-1: 两张表交替追加（乱序）
+  for (let i = 1; i < maxTableRows; i++) {
+    // 先追加销售表（如果还有行）
+    if (i < salesRows.length) {
+      yield* generateTextEvents(`📊 销售表追加第 ${i + 1} 行...\n`);
+      yield {
+        type: 'data_chunk',
+        data: {
+          chunkType: 'table', blockId: tableABlockId, index: i,
+          total: salesRows.length, rows: [salesRows[i]],
+        },
+      };
+    }
+
+    // 再追加用户表（如果还有行）
+    if (i < userRows.length) {
+      yield* generateTextEvents(`👥 用户表追加第 ${i + 1} 行...\n`);
+      yield {
+        type: 'data_chunk',
+        data: {
+          chunkType: 'table', blockId: tableBBlockId, index: i,
+          total: userRows.length, rows: [userRows[i]],
+        },
+      };
+    }
   }
 
-  yield* generateTextEvents(' 表格加载完成！✅\n\n');
+  yield* generateTextEvents('\n✅ 两张表格全部加载完成！\n\n');
   yield { type: 'thinking', data: { stage: 'done', message: '表格加载完成' } };
 
-  // --- Phase 3: 逐系列图表 ---
-  yield { type: 'thinking', data: { stage: 'generating', message: '正在逐步构建图表...' } };
-  yield* generateTextEvents('## 营收对比图表（逐系列构建）\n\n');
+  // ========== Phase 3: 两个图表乱序交织 ==========
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在并行构建多个图表...' } };
+  yield* generateTextEvents('## 多图表乱序构建\n\n');
 
   const barConfig = createBarChartConfig();
-  const seriesArray = barConfig.series as Record<string, any>[];
-  const seriesNames = ['营收', '成本', '利润'];
-  const seriesIcons = ['📊', '📉', '💰'];
+  const lineConfig = createLineChartConfig();
+  const barSeries = barConfig.series as Record<string, any>[];
+  const lineSeries = lineConfig.series as Record<string, any>[];
+  const chartABlockId = 'interleaved-bar-chart';
+  const chartBBlockId = 'interleaved-line-chart';
+  const maxChartSeries = Math.max(barSeries.length, lineSeries.length);
 
-  // Chunk 0: 完整 ECharts option（只含首个 series，后续 chunk 追加）
-  yield* generateTextEvents(`${seriesIcons[0]} 添加 **${seriesNames[0]}** 数据... `);
+  // Chunk 0: 两个图表的首个 series（交错发送）
+  yield* generateTextEvents('📊 构建 **柱状图** 首个系列（营收）...\n');
   yield {
     type: 'data_chunk',
     data: {
-      chunkType: 'chart',
-      index: 0,
-      total: seriesArray.length,
-      chartType: 'bar',
-      title: '季度营收与利润对比（逐块模式）',
-      // 下发完整 ECharts option（含 yAxis / tooltip / legend / animation）
-      config: { ...barConfig, series: [seriesArray[0]] },
+      chunkType: 'chart', blockId: chartABlockId, index: 0,
+      total: barSeries.length, chartType: 'bar',
+      title: '季度营收对比（乱序模式）',
+      config: { ...barConfig, series: [barSeries[0]] },
       xAxisData: ['Q1', 'Q2', 'Q3', 'Q4'],
-      series: [seriesArray[0]],
+      series: [barSeries[0]],
     },
   };
 
-  // Chunk 1..2: 追加后续 series
-  for (let i = 1; i < seriesArray.length; i++) {
-    yield* generateTextEvents(`${seriesIcons[i]} 添加 **${seriesNames[i]}** 数据... `);
-    yield {
-      type: 'data_chunk',
-      data: {
-        chunkType: 'chart',
-        index: i,
-        total: seriesArray.length,
-        series: [seriesArray[i]],
-      },
-    };
+  yield* generateTextEvents('📈 构建 **折线图** 首个系列（日活）...\n');
+  yield {
+    type: 'data_chunk',
+    data: {
+      chunkType: 'chart', blockId: chartBBlockId, index: 0,
+      total: lineSeries.length, chartType: 'line',
+      title: '用户增长趋势（乱序模式）',
+      config: { ...lineConfig, series: [lineSeries[0]] },
+      xAxisData: ['1月', '2月', '3月', '4月', '5月', '6月'],
+      series: [lineSeries[0]],
+    },
+  };
+
+  // Chunk 1..N-1: 两个图表交替追加 series
+  const barNames = ['营收', '成本', '利润'];
+  const lineNames = ['日活', '月活', '新增'];
+  for (let i = 1; i < maxChartSeries; i++) {
+    if (i < barSeries.length) {
+      yield* generateTextEvents(`📊 柱状图追加 **${barNames[i]}** 系列...\n`);
+      yield {
+        type: 'data_chunk',
+        data: {
+          chunkType: 'chart', blockId: chartABlockId, index: i,
+          total: barSeries.length, series: [barSeries[i]],
+        },
+      };
+    }
+    if (i < lineSeries.length) {
+      yield* generateTextEvents(`📈 折线图追加 **${lineNames[i]}** 系列...\n`);
+      yield {
+        type: 'data_chunk',
+        data: {
+          chunkType: 'chart', blockId: chartBBlockId, index: i,
+          total: lineSeries.length, series: [lineSeries[i]],
+        },
+      };
+    }
   }
 
-  yield* generateTextEvents(' 图表构建完成！✅\n\n');
+  yield* generateTextEvents('\n✅ 两个图表全部构建完成！\n\n');
   yield { type: 'thinking', data: { stage: 'done', message: '图表构建完成' } };
 
-  // --- Phase 4: 总结 ---
+  // ========== Phase 4: 总结 ==========
   yield* generateTextEvents(
     '## 总结\n\n' +
-    '以上就是**逐块流式加载**的完整演示：\n\n' +
-    `- **表格**：${tableRows.length} 行数据分 ${tableRows.length} 个 chunk 逐行到达\n` +
-    `- **图表**：${seriesArray.length} 个系列分 ${seriesArray.length} 个 chunk 逐步追加\n\n` +
-    '> 💡 **对比一次性模式**：输入 `分析销售数据` 可以看到同样的数据以完整块方式一次性到达，' +
-    '而逐块模式让用户在首块数据到达后即可开始浏览，无需等待所有数据就绪。\n'
+    '以上是**多数据块乱序交织**的完整演示：\n\n' +
+    `- **表格**：${salesRows.length} 行销售数据 + ${userRows.length} 行用户数据，chunk 交替发送\n` +
+    `- **图表**：${barSeries.length} 系列柱状图 + ${lineSeries.length} 系列折线图，series 交替追加\n\n` +
+    '> 💡 **关键验证**：即使后端乱序发送，前端通过 `blockId` 精确匹配，' +
+    '每个表格/图表的 chunk 都能正确追加到对应的数据块上。\n\n' +
+    '> 🔍 如果看到两张表格各行数据完整、两个图表各系列齐全且无混淆，说明 `blockId` 机制生效。\n'
   );
 
   yield { type: 'done', data: null };

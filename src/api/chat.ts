@@ -81,7 +81,7 @@ export async function renameSessionAPI(
 export async function fetchMessages(
   sessionId: string,
   pageNum = 1,
-  pageSize = 2,
+  pageSize = 10,
 ): Promise<{ messages: ChatMessage[]; total: number; hasMoreOlder: boolean }> {
   const params = new URLSearchParams({
     pageNum: String(pageNum),

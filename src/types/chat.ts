@@ -115,6 +115,8 @@ export type DataChunkType = 'table' | 'chart';
 export interface SSEDataChunkData {
   /** 区分表格还是图表的 chunk */
   chunkType: DataChunkType;
+  /** 同一数据块的 chunk 共享一个 blockId，用于乱序匹配 */
+  blockId: string;
   /** 0-based chunk 序号 */
   index: number;
   /** 可选：总 chunk 数，用于进度指示 */

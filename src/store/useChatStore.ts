@@ -158,11 +158,11 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     }));
 
     try {
-      const pageNum = Math.floor(session.messages.length / 2) + 1;
+      const pageNum = Math.floor(session.messages.length / 10) + 1;
       const { messages, hasMoreOlder } = await fetchMessages(
         sessionId,
         pageNum,
-        2,
+        10,
       );
       let addedCount = 0;
       set((state) => ({
@@ -424,15 +424,22 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     };
 
     /**
+     * blockId → contentBlocks 下标映射，解决多表格/图表乱序 chunk 匹配问题
+     */
+    const blockIdMap = new Map<string, number>();
+
+    /**
      * 统一的数据块处理函数
-     * - index===0：创建新 block 并 push
-     * - index>0：找到同类 block，以新对象替换（追加数据）
+     * - index===0：创建新 block 并 push，记录 blockId → 下标
+     * - index>0：通过 blockId 精确匹配对应 block 追加数据
      */
     const handleDataChunk = (chunk: SSEDataChunkData) => {
       if (pendingLoadingBlock) pendingLoadingBlock = null;
 
       if (chunk.chunkType === "table") {
         if (chunk.index === 0) {
+          const idx = contentBlocks.length;
+          blockIdMap.set(chunk.blockId, idx);
           contentBlocks.push({
             type: "table",
             columns: chunk.columns!,
@@ -440,19 +447,13 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
             title: chunk.title,
           } as TableContent);
         } else {
-          for (let i = contentBlocks.length - 1; i >= 0; i--) {
-            const block = contentBlocks[i];
-            if (block.type === "table") {
-              contentBlocks[i] = {
-                ...block,
-                data: [
-                  ...(block as TableContent).data,
-                  ...(chunk.rows || []),
-                ],
-              } as TableContent;
-              break;
-            }
-          }
+          const idx = blockIdMap.get(chunk.blockId);
+          if (idx === undefined) return;
+          const block = contentBlocks[idx] as TableContent;
+          contentBlocks[idx] = {
+            ...block,
+            data: [...block.data, ...(chunk.rows || [])],
+          } as TableContent;
         }
       } else if (chunk.chunkType === "chart") {
         if (chunk.index === 0) {
@@ -464,6 +465,8 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
                 series: chunk.series || [],
               }
               : { series: chunk.series || [] });
+          const idx = contentBlocks.length;
+          blockIdMap.set(chunk.blockId, idx);
           contentBlocks.push({
             type: "chart",
             chartType: chunk.chartType!,
@@ -471,30 +474,26 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
             config: baseConfig,
           } as ChartContent);
         } else {
-          for (let i = contentBlocks.length - 1; i >= 0; i--) {
-            const block = contentBlocks[i];
-            if (block.type === "chart") {
-              const existing = block as ChartContent;
-              const newSeries = [
-                ...(existing.config.series || []),
-                ...(chunk.series || []),
-              ];
-              const newXAxis = chunk.xAxisData
-                ? {
-                  ...(existing.config.xAxis || {}),
-                  data: [
-                    ...((existing.config.xAxis as any)?.data || []),
-                    ...chunk.xAxisData,
-                  ],
-                }
-                : existing.config.xAxis;
-              contentBlocks[i] = {
-                ...existing,
-                config: { ...existing.config, xAxis: newXAxis, series: newSeries },
-              } as ChartContent;
-              break;
+          const idx = blockIdMap.get(chunk.blockId);
+          if (idx === undefined) return;
+          const existing = contentBlocks[idx] as ChartContent;
+          const newSeries = [
+            ...(existing.config.series || []),
+            ...(chunk.series || []),
+          ];
+          const newXAxis = chunk.xAxisData
+            ? {
+              ...(existing.config.xAxis || {}),
+              data: [
+                ...((existing.config.xAxis as any)?.data || []),
+                ...chunk.xAxisData,
+              ],
             }
-          }
+            : existing.config.xAxis;
+          contentBlocks[idx] = {
+            ...existing,
+            config: { ...existing.config, xAxis: newXAxis, series: newSeries },
+          } as ChartContent;
         }
       }
     };
@@ -578,6 +577,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
                 case "table_data": {
                   handleDataChunk({
                     chunkType: "table",
+                    blockId: `table_${generateId("blk")}`,
                     index: 0,
                     columns: event.data.columns,
                     rows: event.data.data,
@@ -599,6 +599,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
                 case "chart_data": {
                   handleDataChunk({
                     chunkType: "chart",
+                    blockId: `chart_${generateId("blk")}`,
                     index: 0,
                     chartType: event.data.chartType,
                     config: event.data.config,
