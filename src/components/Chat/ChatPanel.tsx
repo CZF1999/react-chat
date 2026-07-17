@@ -19,7 +19,7 @@ const ChatPanel: React.FC = () => {
   const loadMoreMessages = useChatStore((s) => s.loadMoreMessages);
 
   const [atBottom, setAtBottom] = useState(true);
-  const [scrollTrigger, setScrollTrigger] = useState(0);
+  const [firstItemIndex, setFirstItemIndex] = useState(0);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
 
   const messages = session?.messages ?? [];
@@ -29,7 +29,7 @@ const ChatPanel: React.FC = () => {
   // 切换会话时滚动到底部
   useEffect(() => {
     if (activeSessionId) {
-      setScrollTrigger((prev) => prev + 1);
+      setFirstItemIndex(0);
       setTimeout(() => {
         virtuosoRef.current?.scrollToIndex({
           index: "LAST",
@@ -39,24 +39,20 @@ const ChatPanel: React.FC = () => {
     }
   }, [activeSessionId]);
 
-  // 发送消息后滚动到底部
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({
-          index: "LAST",
-          behavior: "smooth",
-        });
-      }, 50);
-    }
-  }, [messages.length]);
-
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({
       index: "LAST",
       behavior: "smooth",
     });
   }, []);
+
+  const handleLoadMore = useCallback(async () => {
+    if (!activeSessionId) return;
+    const addedCount = await loadMoreMessages(activeSessionId);
+    if (addedCount > 0) {
+      setFirstItemIndex((prev) => prev - addedCount);
+    }
+  }, [activeSessionId, loadMoreMessages]);
 
   const handleSend = useCallback(() => {
     if (!activeSessionId || !inputValue.trim() || isStreaming) return;
@@ -132,6 +128,7 @@ const ChatPanel: React.FC = () => {
             key={activeSessionId}
             ref={virtuosoRef}
             data={messages}
+            firstItemIndex={firstItemIndex}
             followOutput={atBottom ? "smooth" : false}
             atBottomStateChange={setAtBottom}
             itemKey={(msg) => msg.id}
@@ -144,9 +141,7 @@ const ChatPanel: React.FC = () => {
                   <div style={{ textAlign: "center", padding: "10px 0" }}>
                     <button
                       className="sbsjjc-chat__load-older-btn"
-                      onClick={() =>
-                        activeSessionId && loadMoreMessages(activeSessionId)
-                      }
+                      onClick={handleLoadMore}
                       disabled={session?.isLoadingOlder}
                       style={{
                         background: "none",

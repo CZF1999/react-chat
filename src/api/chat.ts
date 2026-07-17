@@ -77,15 +77,15 @@ export async function renameSessionAPI(
 
 // ==================== 消息 API ====================
 
-/** 获取某会话的历史消息（支持分页） */
+/** 获取某会话的历史消息（分页） */
 export async function fetchMessages(
   sessionId: string,
-  offset = 0,
-  limit = 50,
+  pageNum = 1,
+  pageSize = 2,
 ): Promise<{ messages: ChatMessage[]; total: number; hasMoreOlder: boolean }> {
   const params = new URLSearchParams({
-    offset: String(offset),
-    limit: String(limit),
+    pageNum: String(pageNum),
+    pageSize: String(pageSize),
   });
   const res = await fetch(
     `${API_BASE}/sessions/${sessionId}/messages?${params}`,
@@ -103,10 +103,11 @@ export async function fetchMessages(
       isStreaming: false,
     }),
   );
+  const total: number = data.total ?? messages.length;
   return {
     messages,
-    total: data.total ?? messages.length,
-    hasMoreOlder: data.hasMoreOlder ?? false,
+    total,
+    hasMoreOlder: pageNum * pageSize < total,
   };
 }
 

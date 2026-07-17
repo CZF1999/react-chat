@@ -92,19 +92,29 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 // ==================== 消息操作 ====================
 
-/** GET /api/sessions/:id/messages - 获取某会话的所有消息 */
+/** GET /api/sessions/:id/messages - 获取某会话的消息（分页） */
 router.get('/:id/messages', async (req: Request, res: Response) => {
   const { id } = req.params;
+  const pageNum = parseInt(req.query.pageNum as string, 10) || 1;
+  const pageSize = parseInt(req.query.pageSize as string, 10) || 2;
+  const offset = (pageNum - 1) * pageSize;
 
   try {
-    const [rows] = await db.pool.query(
-      'SELECT id, session_id, role, content, content_blocks, thinking_stages, created_at FROM messages WHERE session_id = ? ORDER BY created_at ASC',
+    // 1. 查总数
+    const [countRows] = await db.pool.query(
+      'SELECT COUNT(*) AS total FROM messages WHERE session_id = ?',
       [id]
+    );
+    const total = (countRows as any[])[0]?.total ?? 0;
+
+    // 2. 查当前页
+    const [rows] = await db.pool.query(
+      'SELECT id, session_id, role, content, content_blocks, thinking_stages, created_at FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?',
+      [id, pageSize, offset]
     );
 
     // 将 DB 行转为 ChatMessage 格式
     const messages = (rows as any[]).map((row) => {
-      // MySQL JSON 列可能已被 mysql2 自动解析为对象，也可能还是字符串
       const parseJSON = (val: any) => {
         if (val === null || val === undefined) return undefined;
         if (typeof val === 'object') return val;
@@ -121,7 +131,7 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
       };
     });
 
-    res.json({ messages });
+    res.json({ messages, total });
   } catch (err) {
     console.error('[sessions] 获取消息失败:', err);
     res.status(500).json({ error: '获取消息失败' });

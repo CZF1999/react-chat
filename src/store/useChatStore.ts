@@ -52,8 +52,8 @@ interface ChatStoreState {
 
   // ---- 消息操作 ----
   loadMessages: (sessionId: string) => Promise<void>;
-  /** 加载更早的历史消息（分页） */
-  loadMoreMessages: (sessionId: string) => Promise<void>;
+  /** 加载更早的历史消息（分页），返回实际新增条数（0 表示无更多） */
+  loadMoreMessages: (sessionId: string) => Promise<number>;
   flushMessages: (
     sessionId: string,
     assistantId: string,
@@ -149,7 +149,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
 
   loadMoreMessages: async (sessionId: string) => {
     const session = get().getSession(sessionId);
-    if (!session || session.isLoadingOlder || !session.hasMoreOlder) return;
+    if (!session || session.isLoadingOlder || !session.hasMoreOlder) return 0;
 
     set((state) => ({
       sessions: state.sessions.map((s) =>
@@ -158,16 +158,19 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     }));
 
     try {
+      const pageNum = Math.floor(session.messages.length / 2) + 1;
       const { messages, hasMoreOlder } = await fetchMessages(
         sessionId,
-        session.messages.length,
-        50,
+        pageNum,
+        2,
       );
+      let addedCount = 0;
       set((state) => ({
         sessions: state.sessions.map((s) => {
           if (s.id !== sessionId) return s;
           const existingIds = new Set(s.messages.map((m) => m.id));
           const uniqueOlder = messages.filter((m) => !existingIds.has(m.id));
+          addedCount = uniqueOlder.length;
           return {
             ...s,
             messages: [...uniqueOlder, ...s.messages],
@@ -176,6 +179,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
           };
         }),
       }));
+      return addedCount;
     } catch (err) {
       console.error("[store] 加载更早消息失败:", err);
       set((state) => ({
@@ -183,6 +187,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
           s.id === sessionId ? { ...s, isLoadingOlder: false } : s,
         ),
       }));
+      return 0;
     }
   },
 
