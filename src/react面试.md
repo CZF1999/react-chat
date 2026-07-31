@@ -19,7 +19,7 @@ useMemo()组件，useMemo()组件用于缓存变量，避免变量重复计算�
 
 5、useEffect和useLayoutEffect的区别：useEffect在DOM更新之后异步执行，useLayoutEffect是在DOM更新之后同步执行
 6、受控组件指表单元素的值受React状态state的控制，非受控组件指表单元素值不受React状态state控制,通常通过ref获取表单值 ref={inputRef} 
-
+7、React项目是如何捕获错误的：使用static getDerivedStateFromError()方法，在组件抛出错误时返回一个state，并渲染该state。
 fiber架构是react16重写的调和引擎，核心是让渲染过程可中断、可恢复，解决长任务阻塞页面的问题
 他把组件树转换成一条链表结构，用循环方式遍历每个fiber节点，每执行一个工作单元就检查是否需要让出主线程，整个更新分为
 两个阶段：Render阶段和Commit阶段,render阶段在内存里做diff,可中断；commit阶段同步操作dom，不可中断；

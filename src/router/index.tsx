@@ -9,7 +9,7 @@ import {
 import { lazy, Suspense } from "react";
 import useAsyncRouterStore from "@/store/useAsyncRouterStore";
 import { useEffect } from "react";
-
+import LayoutLoading from "@/components/layoutLoading";
 // ================= 1. 路由守卫组件 =================
 
 // 支持多层目录匹配
@@ -152,7 +152,7 @@ const router = createBrowserRouter([
       {
         path: "/",
         element: (
-          <Suspense fallback={<div>Loading Layout...</div>}>
+          <Suspense fallback={<LayoutLoading />}>
             <Layout />
           </Suspense>
         ),

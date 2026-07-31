@@ -65,12 +65,12 @@ function Editor() {
     );
   }, [token, dispatch]);
   // 手动保存按钮的回调：用 useCallback 稳定引用
-  const handleManualSave = useCallback(() => {
+  const handleManualSave = useCallback((value: number) => {
     save();
     alert("已保存");
     setLocation("编辑器");
     setChildInfo((c) => {
-      return { ...c, height: 190 };
+      return { ...c, height: c.height + value };
     });
   }, []); // save 来自自定义 Hook，依赖稳定时不会导致 Button 重渲染
 
@@ -87,9 +87,12 @@ function Editor() {
         {location}-{token}-{userInfo?.bmdm}
       </h1>
       <textarea value={text} onChange={(e) => changeText(e.target.value)} />
-      <Button onClick={handleManualSave}>{buttonText}</Button>
+      <Button onClick={() => handleManualSave(0)}>{buttonText}</Button>
       <button onClick={() => setButtonText("保存中...")}>保存</button>
-      <ChildA onSubmit={handleManualSave} childInfo={childInfo} />
+      <ChildA
+        onSubmit={(value) => handleManualSave(value)}
+        childInfo={childInfo}
+      />
     </div>
   );
 }

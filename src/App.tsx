@@ -1,13 +1,11 @@
-import { Button } from 'antd';
-
+import { Button } from "antd";
 
 function App() {
-
   return (
     <>
-    <Button>Button</Button>
+      <Button>Button</Button>
     </>
-  )
+  );
 }
 
-export default App
+export default App;
