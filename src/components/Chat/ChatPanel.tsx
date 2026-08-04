@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "@/store/useChatStore";
 import { ChatMessageItem } from "@/components/Chat/ChatMessageItem";
 import { ScrollToBottomButton } from "@/components/Chat/ScrollToBottomButton";
+import type { ChatMessage } from "@/types/chat";
 
 const ChatPanel: React.FC = () => {
   const { activeSessionId, session } = useChatStore(
@@ -150,7 +151,7 @@ const ChatPanel: React.FC = () => {
             firstItemIndex={firstItemIndex}
             followOutput={atBottom ? "smooth" : false}
             atBottomStateChange={setAtBottom}
-            itemKey={(msg) => msg.id}
+            computeItemKey={(_index, msg: ChatMessage) => msg.id}
             itemContent={(index, msg) => (
               <ChatMessageItem
                 message={msg}

@@ -13,7 +13,7 @@ const Layout = () => {
   // 将后端返回的树形结构转换为 Ant Design Menu 所需的格式
   const getMenuItems = (items: any[]): MenuProps["items"] => {
     return items.map((item) => {
-      const menuItem: MenuProps["items"][number] = {
+      const menuItem: any = {
         key: item.map.zydz || item.id,
         label: item.map.zymc,
       };

@@ -3,11 +3,15 @@ import React from 'react';
 import { Card, Table } from 'antd';
 import type { ColumnsType, TableProps } from 'antd/es/table';
 
-interface BaseTableProps<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface BaseTableProps {
   // 核心数据与配置 (来自 useTablePage)
-  tableProps: TableProps<T>;
-  columns: ColumnsType<T>;
-  rowKey: string | ((record: T) => string);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tableProps: TableProps<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  columns: ColumnsType<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rowKey: string | ((record: any) => string);
 
   // 👇 插槽/自定义区域设计
   headerTitle?: React.ReactNode;       // 表格标题 (对应 Card title)
@@ -19,8 +23,7 @@ interface BaseTableProps<T> {
   [key: string]: unknown;
 }
 
-// 使用泛型支持 TS 类型推导
-const BaseTable = <T extends object>(props: BaseTableProps<T>) => {
+const BaseTable = (props: BaseTableProps) => {
   const {
     tableProps,
     columns,

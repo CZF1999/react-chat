@@ -46,7 +46,6 @@ export const DataTableRenderer: React.FC<DataTableRendererProps> = ({
   const isValid = columns && columns.length > 0 && rows;
   const isSkeleton = phase === 'skeleton' || phase === 'expanding';
 
-  const columnCount = columns?.length || 4;
   const rowCount = rows?.length || 4;
 
   return (

@@ -50,7 +50,7 @@ const MycreateCase = () => {
       dataIndex: "operation",
       width: 200,
       align: "center",
-      render: (row, record) => (
+      render: ( record) => (
         <Space>
           <Button type="primary" onClick={() => editTableData(record)}>
             编辑

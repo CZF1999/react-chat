@@ -63,7 +63,7 @@ interface ChatStoreState {
   loadMoreMessages: (sessionId: string) => Promise<number>;
   flushMessages: (
     sessionId: string,
-    assistantId: string,
+    localId: string,
     contentBlocks: MessageContent[],
     thinkingStages: ThinkingStage[],
     isStreaming: boolean,
@@ -297,7 +297,6 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
   },
 
   // ---- 输入草稿 ----
-
   setDraftInput: (sessionId: string, value: string) => {
     set((state) => ({
       sessions: state.sessions.map((s) =>
@@ -310,7 +309,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
 
   flushMessages: (
     sessionId: string,
-    assistantId: string,
+    localId: string,
     contentBlocks: MessageContent[],
     thinkingStages: ThinkingStage[],
     isStreaming: boolean,
@@ -324,7 +323,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
         const targetMsg = messages[lastIdx];
 
         // 快速路径：assistant 消息保证是最后一条（sendMessage 保证）
-        if (targetMsg && targetMsg.id === assistantId && targetMsg.role === "assistant") {
+        if (targetMsg && targetMsg.id === localId && targetMsg.role === "assistant") {
           const updatedMessages = [...messages];
           updatedMessages[lastIdx] = {
             ...targetMsg,
@@ -345,7 +344,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
         }
 
         // 安全带：若不变式被破坏（极端情况），回退到 findIndex 扫描
-        const idx = messages.findIndex((m) => m.id === assistantId);
+        const idx = messages.findIndex((m) => m.id === localId);
         if (idx === -1) return s;
         const updatedMessages = [...messages];
         updatedMessages[idx] = {
@@ -369,13 +368,12 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
   },
 
   // ---- 流式控制 ----
-
   sendMessage: async (sessionId: string, content: string) => {
     const session = get().getSession(sessionId);
     if (!session) return;
     if (!content.trim()) return;
 
-    const assistantId = generateId("msg");
+    const localId = generateId("msg");
 
     // Step 1: 添加用户消息 + AI 占位消息
     const userMsg: ChatMessage = {
@@ -385,7 +383,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       createdAt: Date.now(),
     };
     const assistantMsg: ChatMessage = {
-      id: assistantId,
+      id: localId,
       role: "assistant",
       content: "",
       contentBlocks: [],
@@ -417,7 +415,9 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       type: "table" | "chart";
       message: string;
     } | null = null;
-    let aborted = false;
+    let lastFlushTime = 0;
+    let pendingFlush = false;
+    const blockIdMap = new Map<string, number>();
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       // ---- 重试：重置局部状态 ----
@@ -439,7 +439,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
             s.id === sessionId ? { ...s, isReconnecting: true } : s,
           ),
         }));
-        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+        get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, true);
 
         await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt - 1]));
 
@@ -455,23 +455,19 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       abortControllers.set(sessionId, controller);
 
       // ---- 节流状态 ----
-      let lastFlushTime = 0;
       const FLUSH_INTERVAL_MS = 33;
-      let pendingFlush = false;
 
       const throttledFlush = () => {
         const now = Date.now();
         if (now - lastFlushTime >= FLUSH_INTERVAL_MS) {
           lastFlushTime = now;
-          get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+          get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, true);
           pendingFlush = false;
         } else {
           pendingFlush = true;
         }
       };
 
-      // ---- blockId 映射 ----
-      const blockIdMap = new Map<string, number>();
 
       const handleDataChunk = (chunk: SSEDataChunkData) => {
         if (pendingLoadingBlock) pendingLoadingBlock = null;
@@ -715,7 +711,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
 
         // 排空节流中积压的最后一次刷新
         if (pendingFlush) {
-          get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+          get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, true);
         }
 
         // 成功：退出重试循环
@@ -723,7 +719,6 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       } catch (err: any) {
         // 用户主动停止：立即退出
         if (err.name === "AbortError") {
-          aborted = true;
           break;
         }
 
@@ -744,7 +739,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     // ---- 最终清理（重试循环结束后执行） ----
     const stillExists = get().getSession(sessionId);
     if (stillExists) {
-      get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, false);
+      get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, false);
       get().persistMessages(sessionId);
     }
   },
@@ -792,7 +787,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     const lastMsg = session.messages[session.messages.length - 1];
     if (!lastMsg || lastMsg.role !== "assistant") return;
 
-    const assistantId = lastMsg.id;
+    const localId = lastMsg.id;
     const message = session.pausedMessage;
     if (!message) return;
 
@@ -835,7 +830,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       const now = Date.now();
       if (now - lastFlushTime >= FLUSH_INTERVAL_MS) {
         lastFlushTime = now;
-        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+        get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, true);
         pendingFlush = false;
       } else {
         pendingFlush = true;
@@ -1001,7 +996,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       }
 
       if (pendingFlush) {
-        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, true);
+        get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, true);
       }
     } catch (err: any) {
       if (err.name !== "AbortError") {
@@ -1014,7 +1009,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
 
       const stillExists = get().getSession(sessionId);
       if (stillExists) {
-        get().flushMessages(sessionId, assistantId, contentBlocks, thinkingStages, false);
+        get().flushMessages(sessionId, localId, contentBlocks, thinkingStages, false);
         get().persistMessages(sessionId);
       }
     }

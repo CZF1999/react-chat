@@ -29,7 +29,7 @@ const jatButton: React.FC<JatButtonProps> = ({
   );
   if (needConfirm) {
     return (
-      <Popconfirm title={title} onConfirm={onClick} {...popconfirmProps}>
+      <Popconfirm title={title} onConfirm={(e) => onClick?.(e as React.MouseEvent<HTMLElement, MouseEvent>)} {...popconfirmProps}>
         {buttonNode}
       </Popconfirm>
     );

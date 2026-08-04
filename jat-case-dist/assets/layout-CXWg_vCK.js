@@ -1,0 +1,1 @@
+import{n as e,t}from"./request-R8gfONdV.js";function n(n){return e({url:`/getAppMenu`,method:`get`,headers:{"Content-Type":t.urlencoded},params:n})}function r(n){return e({url:`/getUserInfo`,method:`get`,headers:{"Content-Type":t.urlencoded},params:n})}export{r as n,n as t};

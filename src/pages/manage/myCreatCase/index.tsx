@@ -164,7 +164,7 @@ const MycreateCase = () => {
         scroll={{ y: "calc(100vh - 420px)" }}
         rowSelection={{
           selectedRowKeys,
-          onChange: (keys) => setSelectedRowKeys(keys),
+          onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
         }}
       />
     </div>

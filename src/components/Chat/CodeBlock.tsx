@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 
 interface CodeBlockProps {
   className?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export const CodeBlock: React.FC<CodeBlockProps> = ({ className, children }) => {

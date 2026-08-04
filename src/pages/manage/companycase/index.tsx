@@ -1,11 +1,11 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 
 function ControlledInput() {
-  const inputRef = useRef(null);
-  const uploadRef = useRef(null)
+  const inputRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
 
-  const handleChange = (e) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value);
   };
 
@@ -13,8 +13,8 @@ function ControlledInput() {
     alert("提交的名字：" + value + "-" + inputRef.current?.value);
   };
   const uploadChangeFile = () => {
-    console.log(uploadRef.current.file)
-  }
+    console.log(uploadRef.current?.files);
+  };
   return (
     <div>
       <input

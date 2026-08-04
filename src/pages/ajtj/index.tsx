@@ -1,5 +1,5 @@
 import Parent from "./parent.tsx";
-import React, { useState } from "react";
+import { useState } from "react";
 // 导入抽离的 Context
 import { ThemeContext } from "./themeContext";
 import useConfigStore from "@/store/useConfigStore";

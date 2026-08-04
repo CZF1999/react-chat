@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useState } from "react";
 import useBaseConfigStore from "@/store/useBaseConfig";
 import { useDispatch, useSelector } from "react-redux";
 import { getUserInfoByToken, setUserInfo } from "@/store/modules/userSlice";
-import type { UserInfo } from "@/type/layout";
+// import type { UserInfo } from "@/type/layout";
 // 假设你配置了 RootState 类型
 import type { RootState, AppDispatch } from "@/store";
 import ChildA from "./child";
 import type { childInfo } from "@/type/layout";
 // 自定义 Hook：里面使用 useCallback
-function useAutoSave(data, delay) {
+function useAutoSave(data: any, _delay: number) {
   const save = useCallback(() => {
     console.log("保存数据：", data);
   }, [data]); // data 变化时，save 函数也变

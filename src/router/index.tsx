@@ -6,6 +6,7 @@ import {
   Navigate,
   useSearchParams,
 } from "react-router-dom";
+import type React from "react";
 import { lazy, Suspense } from "react";
 import useAsyncRouterStore from "@/store/useAsyncRouterStore";
 import { useEffect } from "react";
@@ -68,7 +69,7 @@ const DynamicRoutes = () => {
     }
   };
   // 👇 修改：移除 parentPath 参数，改为明确的两层遍历
-  const generateRoutes = (items: any[]): JSX.Element[] => {
+  const generateRoutes = (items: any[]): React.ReactElement[] => {
     return items.map((item) => {
       const currentPath = item.map.zydz;
 
@@ -133,7 +134,7 @@ const DynamicRoutes = () => {
       <Route
         index
         element={
-          <Navigate to={asyncRouter[0]?.map.zydz || "dashboard"} replace />
+          <Navigate to={asyncRouter[0]?.map.ydz || "dashboard"} replace />
         }
       />
       {/* 404 */}

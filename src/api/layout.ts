@@ -1,5 +1,5 @@
 import { request, HeadersContentType } from '@/utils/request'
-import type { ResponseData, GetAsyncRouterParams, GetUserInfoParams, UserInfo } from '@/type/layout'
+import type { ResponseData, GetAsyncRouterParams, GetUserInfoParams } from '@/type/layout'
 
 export function getAsyncRouterAPI(params: GetAsyncRouterParams) {
     return request<ResponseData<unknown>>({
