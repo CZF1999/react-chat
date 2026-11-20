@@ -145,32 +145,48 @@ const DynamicRoutes = () => {
 
 // ================= 3. 静态路由配置 =================
 const Layout = lazy(() => import("../pages/Layout/Layout"));
-const router = createBrowserRouter([
-  {
-    // 需要鉴权的路由父节点
-    element: <RequireAuth />,
-    children: [
-      {
-        path: "/",
-        element: (
-          <Suspense fallback={<LayoutLoading />}>
-            <Layout />
-          </Suspense>
-        ),
-        children: [
-          // 使用通配符捕获所有子路由，交给 DynamicRoutes 动态处理
-          {
-            path: "*",
-            element: <DynamicRoutes />,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    // 全局 404
-    path: "*",
-    element: <div>404 - Page Not Found</div>,
-  },
-]);
+const SbsjjcPage = lazy(() => import("../pages/sbsjjc/index"));
+const routerBasename =
+  import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
+const router = createBrowserRouter(
+  [
+    {
+      // 需要鉴权的路由父节点
+      element: <RequireAuth />,
+      children: [
+        {
+          path: "/",
+          element: (
+            <Suspense fallback={<LayoutLoading />}>
+              <Layout />
+            </Suspense>
+          ),
+          children: [
+            // AI 聊天页静态路由：不依赖远程菜单，本地可直接打开
+            {
+              path: "sbsjjc",
+              element: (
+                <Suspense fallback={<div>Loading AI 对话...</div>}>
+                  <SbsjjcPage />
+                </Suspense>
+              ),
+            },
+            // 使用通配符捕获所有子路由，交给 DynamicRoutes 动态处理
+            {
+              path: "*",
+              element: <DynamicRoutes />,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      // 全局 404
+      path: "*",
+      element: <div>404 - Page Not Found</div>,
+    },
+  ],
+  { basename: routerBasename },
+);
 export default router;

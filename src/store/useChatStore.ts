@@ -10,6 +10,7 @@ import type {
   SSEDataChunkData,
 } from "@/types/chat";
 import {
+  API_BASE,
   fetchSessions,
   createSessionAPI,
   deleteSessionAPI,
@@ -20,6 +21,24 @@ import {
 } from "@/api/chat";
 import { devtools } from 'zustand/middleware';
 // ==================== 模块级闭包（不可序列化） ====================
+
+/** 发给 DeepSeek 的多轮历史条数上限（不含当前 user 消息） */
+const CHAT_HISTORY_LIMIT = 20;
+
+type ChatHistoryItem = { role: "user" | "assistant"; content: string };
+
+/** 从会话已有消息提取纯文本历史（排除空内容 / 流式占位） */
+function buildChatHistory(messages: ChatMessage[]): ChatHistoryItem[] {
+  return messages
+    .filter(
+      (m) =>
+        (m.role === "user" || m.role === "assistant") &&
+        Boolean(m.content?.trim()) &&
+        !m.isStreaming,
+    )
+    .slice(-CHAT_HISTORY_LIMIT)
+    .map((m) => ({ role: m.role, content: m.content.trim() }));
+}
 
 /** 每个会话独立的 AbortController，支持多 SSE 连接并发 */
 const abortControllers = new Map<string, AbortController>();
@@ -374,6 +393,8 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     if (!content.trim()) return;
 
     const localId = generateId("msg");
+    // 在写入本轮 user/assistant 之前截取历史，供 DeepSeek 多轮
+    const history = buildChatHistory(session.messages);
 
     // Step 1: 添加用户消息 + AI 占位消息
     const userMsg: ChatMessage = {
@@ -537,10 +558,10 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
       // ---- SSE 读取循环 ----
       let sseEventCount = 0;
       try {
-        const response = await fetch("/api/chat", {
+        const response = await fetch(`${API_BASE}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: content, sessionId }),
+          body: JSON.stringify({ message: content, sessionId, history }),
           signal: controller.signal,
         });
 
@@ -895,7 +916,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
     };
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, sessionId, resumeFrom }),

@@ -30,7 +30,19 @@ const Layout = () => {
     });
   };
   console.log(asyncRouter);
-  const menuItems = useMemo(() => getMenuItems(asyncRouter), [asyncRouter]);
+  const menuItems = useMemo(() => {
+    const items = getMenuItems(asyncRouter) ?? [];
+    const hasChat = items.some(
+      (item) =>
+        item?.key === "sbsjjc" ||
+        (Array.isArray(item?.children) &&
+          item.children.some((child: { key?: string }) => child?.key === "sbsjjc"))
+    );
+    if (!hasChat) {
+      items.push({ key: "sbsjjc", label: "AI 对话" });
+    }
+    return items;
+  }, [asyncRouter]);
 
   // 根据当前 URL 计算高亮项
   const selectedKeys = useMemo(() => {

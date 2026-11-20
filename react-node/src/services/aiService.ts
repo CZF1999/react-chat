@@ -698,6 +698,26 @@ function* generateChunkedFlow(): Generator<SSEEvent> {
  * 根据用户消息匹配合适的流式响应
  * @returns SSE 事件生成器
  */
+/**
+ * 是否走本地 mock 结构化演示流（有 DeepSeek Key 时仍可用 demo / 关键词触发）
+ */
+export function isMockDemoMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+
+  if (/中断.*markdown|markdown.*中断|未闭合|代码块.*中断/.test(lower)) return true;
+  if (/异常.*数据|数据.*异常|残缺|损坏|bad.?data/.test(lower)) return true;
+  if (/加载.*中断|中断.*加载|表格.*中断|loading.*interrupt/.test(lower)) return true;
+  if (/json.*错误|容错|fallback/.test(lower)) return true;
+  if (/逐行|追加|chunk|分块|逐条|逐步/.test(lower)) return true;
+  if (/markdown|渲染/.test(lower)) return true;
+  if (/分析|数据|销售|报表|统计/.test(lower)) return true;
+  if (/图表|可视化|chart|趋势|增长/.test(lower)) return true;
+  if (/对比|用户|活跃/.test(lower)) return true;
+  if (/表格|table/.test(lower)) return true;
+
+  return false;
+}
+
 export function generateStream(message: string): SSEEvent[] {
   const lower = message.toLowerCase();
 

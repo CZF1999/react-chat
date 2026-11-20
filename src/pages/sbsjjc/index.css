@@ -58,6 +58,7 @@
   text-align: center;
   color: #999;
   pointer-events: none;
+  width: min(520px, 90%);
 }
 
 .sbsjjc-chat__empty p {
@@ -68,6 +69,36 @@
 .sbsjjc-chat__empty-hint {
   font-size: 13px !important;
   color: #bbb;
+}
+
+.sbsjjc-chat__quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+  pointer-events: auto;
+}
+
+.sbsjjc-chat__quick-btn {
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #1677ff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sbsjjc-chat__quick-btn:hover:not(:disabled) {
+  background: #e6f4ff;
+  border-color: #91caff;
+}
+
+.sbsjjc-chat__quick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 底部输入区域 */

@@ -1,6 +1,9 @@
 import type { ChatMessage, ChatSession } from "@/types/chat";
 
-const API_BASE = "/api";
+/** 本地默认 `/api`（Vite 代理）；生产用 `VITE_API_BASE` 指向 Render，如 `https://xxx.onrender.com/api` */
+export const API_BASE = (
+  import.meta.env.VITE_API_BASE?.trim().replace(/\/$/, "") || "/api"
+);
 
 interface SessionRow {
   id: string;

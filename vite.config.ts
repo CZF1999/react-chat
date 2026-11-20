@@ -5,7 +5,8 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './',
+  // 本地开发用 `/`；生产构建（含 GitHub Pages）用 `/react-chat/`
+  base: process.env.VITE_BASE_PATH || (process.env.NODE_ENV === 'production' ? '/react-chat/' : '/'),
   plugins: [react()],
   test: {
     environment: 'jsdom',

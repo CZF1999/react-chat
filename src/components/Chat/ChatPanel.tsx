@@ -6,6 +6,25 @@ import { ChatMessageItem } from "@/components/Chat/ChatMessageItem";
 import { ScrollToBottomButton } from "@/components/Chat/ScrollToBottomButton";
 import type { ChatMessage } from "@/types/chat";
 
+/** 教育向快捷意图：对齐 JD「推荐 / 生成类交互」 */
+const QUICK_ACTIONS: { label: string; prompt: string }[] = [
+  {
+    label: "讲解这道错题",
+    prompt:
+      "我有一道题做错了，请先帮我定位可能的知识漏洞，再分步骤讲解思路（先不要直接给出完整最终答案，引导我思考）。题目是：",
+  },
+  {
+    label: "推荐 3 道同类练习",
+    prompt:
+      "请根据初中常见考点，推荐 3 道同类练习题（由易到难），每题给出考查点和简要解答提示，不要只堆题目。主题：",
+  },
+  {
+    label: "改成学生能懂的讲解",
+    prompt:
+      "请把下面这段内容改写成初中生也能听懂的讲解：用生活化例子、分步骤，并在最后给出 1 个小练习巩固。原文：",
+  },
+];
+
 const ChatPanel: React.FC = () => {
   const { activeSessionId, session } = useChatStore(
     useShallow((s) => ({
@@ -62,6 +81,15 @@ const ChatPanel: React.FC = () => {
     sendMessage(activeSessionId, inputValue);
     setDraftInput(activeSessionId, "");
   }, [activeSessionId, inputValue, isStreaming, sendMessage, setDraftInput]);
+
+  /** 快捷入口：填入预设 Prompt，方便学生/老师改完再发或直接发送 */
+  const handleQuickAction = useCallback(
+    (prompt: string) => {
+      if (!activeSessionId || isStreaming) return;
+      setDraftInput(activeSessionId, prompt);
+    },
+    [activeSessionId, isStreaming, setDraftInput],
+  );
 
   const handleStop = useCallback(() => {
     if (activeSessionId) {
@@ -139,8 +167,21 @@ const ChatPanel: React.FC = () => {
             <p className="sbsjjc-chat__empty-hint">
               支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表
             </p>
-            <p className="sbsjjc-chat__empty-hint" style={{ marginTop: 4 }}>
-              试试发送 <b>"分析销售数据"</b> 体验完整演示
+            <div className="sbsjjc-chat__quick-actions">
+              {QUICK_ACTIONS.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className="sbsjjc-chat__quick-btn"
+                  disabled={isStreaming}
+                  onClick={() => handleQuickAction(action.prompt)}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+            <p className="sbsjjc-chat__empty-hint" style={{ marginTop: 12 }}>
+              演示结构化流：发送 <b>"分析销售数据"</b>
             </p>
           </div>
         ) : (
