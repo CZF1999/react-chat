@@ -28,14 +28,15 @@
 - [x] **前端 API 基址**：已支持 `VITE_API_BASE`（默认 `/api`）；生产构建例如：
   - `VITE_API_BASE=https://your-service.onrender.com/api`
 - [ ] **（可选）MySQL**：免费演示可不开库；若要持久化，另接免费 MySQL，并用 `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` 等环境变量（需改 `db.ts` 读配置）
-- [ ] 确认仓库已推到 GitHub（Render / Pages 都从 GitHub 拉代码）
+- [x] 确认仓库已推到 GitHub（Render / Pages 都从 GitHub 拉代码）  
+  → 远程：`https://github.com/CZF1999/react-chat`（本地 remote 名：`github`）
 
 ---
 
 ## 2. Render 创建 Web Service
 
 1. 打开 [https://dashboard.render.com](https://dashboard.render.com) → 登录（可用 GitHub）
-2. **New → Web Service** → 选中本仓库
+2. **New → Web Service** → 连接并选中 **`CZF1999/react-chat`**
 3. 按下面填写：
 
 | 配置项 | 推荐值 | 说明 |
@@ -58,7 +59,7 @@
 | Key | Value | 必须？ |
 |-----|--------|--------|
 | `NODE_ENV` | `production` | 建议 |
-| `CORS_ORIGIN` | 你的 Pages 完整源，逗号分隔 | 必须（前端跨域） |
+| `CORS_ORIGIN` | `https://CZF1999.github.io` | 必须（Pages 跨域；含路径时用完整源即可） |
 | `DEEPSEEK_API_KEY` | DeepSeek 控制台的 API Key | 要用真模型时必填 |
 | `DEEPSEEK_MODEL` | 默认 `deepseek-chat`，可改 `deepseek-reasoner` | 可选 |
 | `DEEPSEEK_SYSTEM_PROMPT` | 覆盖默认 K12 学习助手 Prompt | 可选 |
@@ -77,29 +78,25 @@
 
 ### 3.1 构建注意
 
-- 项目 `vite.config.ts` 里 `base: './'`，适合 project pages，可保留
-- `outDir` 当前是 `jat-case-dist`；Pages 部署时要么改 `outDir: 'dist'`，要么 Action/`gh-pages` 指向 `jat-case-dist`
+- 生产 `base` / router `basename`：`/react-chat/`（本地开发仍为 `/`）
+- `outDir`：`jat-case-dist`（Actions 已指向该目录）
 - 构建前设置 API 地址，例如：
 
-```bash
+```powershell
 # Windows PowerShell
 $env:VITE_API_BASE="https://cms-chat-api.onrender.com/api"
 pnpm build
 ```
 
-### 3.2 两种部署方式（二选一）
+### 3.2 GitHub Actions（已接入）
 
-**A. 手动 / gh-pages 分支**
+仓库已含 [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)。你需要在 GitHub 上完成：
 
-```bash
-pnpm build
-# 把 jat-case-dist（或 dist）内容推到 gh-pages 分支
-```
-
-**B. GitHub Actions**（推荐，以后改代码自动发）
-
-- Settings → Pages → Source: GitHub Actions  
-- Workflow：`pnpm build` → 上传产物 → deploy-pages
+1. **Settings → Pages → Source: GitHub Actions**
+2. **Settings → Secrets and variables → Actions → Variables** 新增：
+   - Name: `VITE_API_BASE`
+   - Value: `https://<你的 Render 服务>.onrender.com/api`（Render 部署成功后再填，然后 **Re-run** workflow）
+3. 推送 `master` 或手动 **Actions → Deploy GitHub Pages → Run workflow**
 
 ### 3.3 Pages 访问路径
 
@@ -120,8 +117,12 @@ pnpm build
 
 ## 4. 联调验收清单
 
+代码侧已就绪（CORS / `VITE_API_BASE` / Pages workflow / `/react-chat` basename）。以下需你在 Render / GitHub 控制台完成后勾选：
+
+- [ ] Render 选中 `CZF1999/react-chat`，Root=`react-node`，Deploy 变绿
 - [ ] `GET https://xxx.onrender.com/api/health` → 200，且 `deepseek: true`（若已配 Key）
-- [ ] 浏览器打开 Pages 前端，控制台无 CORS 报错
+- [ ] GitHub Pages Source=Actions；变量 `VITE_API_BASE` 已填并成功 Deploy
+- [ ] 打开 `https://CZF1999.github.io/react-chat/?token=dev`，控制台无 CORS 报错
 - [ ] `/sbsjjc` 能打开会话侧栏
 - [ ] 普通问题（如「你好，介绍一下你自己」）→ DeepSeek 流式文本
 - [ ] 发送「分析销售数据」→ mock 演示（思考 / 表格 / 图表）
