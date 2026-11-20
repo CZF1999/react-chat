@@ -1,13 +1,20 @@
 import React, { useCallback, useState } from 'react';
+import { MermaidBlock } from './MermaidBlock';
 
 interface CodeBlockProps {
   className?: string;
   children?: React.ReactNode;
+  isStreaming?: boolean;
 }
 
-export const CodeBlock: React.FC<CodeBlockProps> = ({ className, children }) => {
+export const CodeBlock: React.FC<CodeBlockProps> = ({
+  className,
+  children,
+  isStreaming = false,
+}) => {
   const code = String(children).replace(/\n$/, '');
-  const language = className?.replace('language-', '') || '';
+  // rehype-highlight 会加上 hljs，class 形如 "hljs language-mermaid"
+  const language = className?.match(/language-([\w-]+)/)?.[1] || '';
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -16,6 +23,10 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ className, children }) => 
       setTimeout(() => setCopied(false), 2000);
     }).catch(console.error);
   }, [code]);
+
+  if (language === 'mermaid') {
+    return <MermaidBlock code={code} isStreaming={isStreaming} />;
+  }
 
   return (
     <div className="relative group my-2">

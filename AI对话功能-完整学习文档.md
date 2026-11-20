@@ -1,7 +1,9 @@
 # AI 对话功能 — 面试版完整学习文档
 
 > 与当前仓库代码同步（React 18 + TypeScript + Express SSE + DeepSeek / mock 双模式 + MySQL 可选持久化）  
-> 用途：自学回顾、简历描述、面试深挖。**只写已实现能力。**
+> 用途：自学回顾、简历描述、面试深挖。**只写已实现能力。**  
+> 更细的「按功能点 + 跟代码走」讲解见 [`AI对话功能-代码详解.md`](./AI对话功能-代码详解.md)。  
+> Store 层可背诵口述稿见 [`useChatStore-面试讲解.md`](./useChatStore-面试讲解.md)（多会话 / SSE / 节流 / 暂停续传）。
 
 ---
 
@@ -470,7 +472,9 @@ SSE 新 type → Store 解析进新 block → 新 Renderer；协议与 UI 同步
 | 主题 | 位置 |
 |------|------|
 | 类型 | `src/types/chat.ts` |
+| Store 面试口述 | [`useChatStore-面试讲解.md`](./useChatStore-面试讲解.md) |
 | Store / SSE 循环 | `src/store/useChatStore.ts` → `sendMessage` / `pauseStreaming` / `resumeStreaming` |
+| 教学版读流 Hook | `src/hooks/useStreamMessage.ts` |
 | API_BASE | `src/api/chat.ts` |
 | 快捷入口 | `src/components/Chat/ChatPanel.tsx` → `QUICK_ACTIONS` |
 | Markdown 修补 | `src/utils/sanitizeStreamingMarkdown.ts` |

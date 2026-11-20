@@ -28,10 +28,14 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(
         <div className="prose prose-sm max-w-none dark:prose-invert">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex, rehypeHighlight]}
+            rehypePlugins={[
+              rehypeKatex,
+              // mermaid 由 MermaidBlock 渲染，避免 highlight 拆成 span 导致源码丢失
+              [rehypeHighlight, { plainText: ['mermaid'] }],
+            ]}
             components={{
               pre: ({ children }) => <>{children}</>,
-              code: CodeBlock,
+              code: (props) => <CodeBlock {...props} isStreaming={isStreaming} />,
               a: ({ href, children }) => (
                 <a href={href} target="_blank" rel="noopener noreferrer">
                   {children}

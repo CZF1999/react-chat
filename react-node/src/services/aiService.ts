@@ -709,6 +709,7 @@ export function isMockDemoMessage(message: string): boolean {
   if (/加载.*中断|中断.*加载|表格.*中断|loading.*interrupt/.test(lower)) return true;
   if (/json.*错误|容错|fallback/.test(lower)) return true;
   if (/逐行|追加|chunk|分块|逐条|逐步/.test(lower)) return true;
+  if (/mermaid错误|坏流程图|坏.*mermaid|mermaid|流程图|架构图/.test(lower)) return true;
   if (/markdown|渲染/.test(lower)) return true;
   if (/分析|数据|销售|报表|统计/.test(lower)) return true;
   if (/图表|可视化|chart|趋势|增长/.test(lower)) return true;
@@ -748,6 +749,16 @@ export function generateStream(message: string): SSEEvent[] {
     return [...generateChunkedFlow()];
   }
 
+  // Mermaid 错误回退演示（须在「流程图」成功分支之前）
+  if (/mermaid错误|坏流程图|坏.*mermaid/.test(lower)) {
+    return [...generateBadMermaidFlow()];
+  }
+
+  // Mermaid 流程图演示
+  if (/mermaid|流程图|架构图/.test(lower)) {
+    return [...generateMermaidFlow()];
+  }
+
   // 匹配包含"markdown"、"渲染" → Markdown 演示
   if (/markdown|渲染/.test(lower)) {
     return [...generateSimpleFlow(message)];
@@ -777,6 +788,49 @@ export function generateStream(message: string): SSEEvent[] {
 }
 
 // ==================== 辅助流 ====================
+
+/** 合法 mermaid 流程图演示（供前端 MermaidBlock 自测） */
+function* generateMermaidFlow(): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在梳理架构关系...' } };
+  yield { type: 'thinking', data: { stage: 'done', message: '架构梳理完成' } };
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在生成 Mermaid 流程图...' } };
+
+  const reply = [
+    '下面是 **useChatStore** 架构示意（Markdown `mermaid` 围栏，流式结束后会渲染为 SVG）：',
+    '',
+    '```mermaid',
+    'flowchart TB',
+    '  UI[ChatPanel] -->|sendMessage| Store[useChatStore]',
+    '  Store --> Maps[AbortController_Map]',
+    '  Store --> SSE["POST /chat SSE"]',
+    '  SSE -->|JSON_events| Store',
+    '```',
+    '',
+    '> 提示：发送 **坏流程图** 可测试语法错误时的源码回退。',
+  ].join('\n');
+
+  yield* generateTextEvents(reply);
+  yield { type: 'thinking', data: { stage: 'done', message: '流程图生成完毕' } };
+  yield { type: 'done', data: null };
+}
+
+/** 非法 mermaid：前端应回退源码并展示错误 */
+function* generateBadMermaidFlow(): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在生成（故意非法）Mermaid…' } };
+
+  const reply = [
+    '这是一段**故意写坏**的 mermaid，用于验证前端失败回退：',
+    '',
+    '```mermaid',
+    'flowchart TB',
+    '  A[Start] --->>>> B{{{broken',
+    '```',
+  ].join('\n');
+
+  yield* generateTextEvents(reply);
+  yield { type: 'thinking', data: { stage: 'done', message: '坏流程图已推送' } };
+  yield { type: 'done', data: null };
+}
 
 function* generateChartFlow(): Generator<SSEEvent> {
   yield { type: 'thinking', data: { stage: 'analyzing', message: '正在分析数据可视化需求...' } };

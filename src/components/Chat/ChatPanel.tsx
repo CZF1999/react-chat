@@ -9,6 +9,10 @@ import type { ChatMessage } from "@/types/chat";
 /** 教育向快捷意图：对齐 JD「推荐 / 生成类交互」 */
 const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   {
+    label: "演示流程图",
+    prompt: "请用 mermaid 画出 ChatPanel 到 useChatStore 的架构图",
+  },
+  {
     label: "讲解这道错题",
     prompt:
       "我有一道题做错了，请先帮我定位可能的知识漏洞，再分步骤讲解思路（先不要直接给出完整最终答案，引导我思考）。题目是：",
@@ -133,7 +137,7 @@ const ChatPanel: React.FC = () => {
         <div className="sbsjjc-chat__empty">
           <p>👋 选择一个会话或创建新会话开始对话</p>
           <p className="sbsjjc-chat__empty-hint">
-            支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表
+            支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表 · 流程图
           </p>
         </div>
       </div>
@@ -165,7 +169,7 @@ const ChatPanel: React.FC = () => {
           <div className="sbsjjc-chat__empty">
             <p>👋 发送一条消息开始对话</p>
             <p className="sbsjjc-chat__empty-hint">
-              支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表
+              支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表 · 流程图
             </p>
             <div className="sbsjjc-chat__quick-actions">
               {QUICK_ACTIONS.map((action) => (

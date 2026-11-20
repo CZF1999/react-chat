@@ -578,12 +578,10 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
 
           const chunk = decoder.decode(value, { stream: true });
           lineBuffer += chunk;
-
+          console.log(lineBuffer)
           const events = lineBuffer.split("\n\n");
           lineBuffer = events.pop() || "";
-
           let hasUpdates = false;
-
           for (const rawEvent of events) {
             for (const line of rawEvent.split("\n")) {
               if (!line.startsWith("data: ")) continue;
@@ -936,7 +934,7 @@ export const useChatStore = create<ChatStoreState>()(devtools((set, get) => ({
 
         const chunk = decoder.decode(value, { stream: true });
         lineBuffer += chunk;
-
+        console.log('lineBuffer', lineBuffer);
         const events = lineBuffer.split("\n\n");
         lineBuffer = events.pop() || "";
 
