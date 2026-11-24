@@ -710,6 +710,7 @@ export function isMockDemoMessage(message: string): boolean {
   if (/json.*错误|容错|fallback/.test(lower)) return true;
   if (/逐行|追加|chunk|分块|逐条|逐步/.test(lower)) return true;
   if (/mermaid错误|坏流程图|坏.*mermaid|mermaid|流程图|架构图/.test(lower)) return true;
+  if (/错题|知识漏洞|分步骤讲解|同类练习|考查点|学生能懂|生活化例子|改写成/.test(lower)) return true;
   if (/markdown|渲染/.test(lower)) return true;
   if (/分析|数据|销售|报表|统计/.test(lower)) return true;
   if (/图表|可视化|chart|趋势|增长/.test(lower)) return true;
@@ -759,6 +760,21 @@ export function generateStream(message: string): SSEEvent[] {
     return [...generateMermaidFlow()];
   }
 
+  // 教育向：错题讲解
+  if (/错题|知识漏洞|分步骤讲解|先不要直接给出完整最终答案/.test(lower)) {
+    return [...generateWrongQuestionFlow(message)];
+  }
+
+  // 教育向：同类练习推荐
+  if (/同类练习|考查点|由易到难|推荐 3 道|推荐3道/.test(lower)) {
+    return [...generatePracticeRecommendFlow(message)];
+  }
+
+  // 教育向：通俗改写
+  if (/学生能懂|生活化例子|改写成|小练习巩固/.test(lower)) {
+    return [...generateSimplifyExplainFlow(message)];
+  }
+
   // 匹配包含"markdown"、"渲染" → Markdown 演示
   if (/markdown|渲染/.test(lower)) {
     return [...generateSimpleFlow(message)];
@@ -788,6 +804,115 @@ export function generateStream(message: string): SSEEvent[] {
 }
 
 // ==================== 辅助流 ====================
+
+/** 教育向：错题讲解 mock（对应 ChatPanel 快捷意图） */
+function* generateWrongQuestionFlow(message: string): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在定位可能的知识漏洞...' } };
+  yield { type: 'thinking', data: { stage: 'done', message: '已形成讲解路径' } };
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在组织分步引导...' } };
+
+  const snippet = message.replace(/\s+/g, ' ').slice(0, 80);
+  const reply = [
+    '好的，我们先**不直接给最终答案**，一起把思路走通。',
+    '',
+    snippet ? `> 你提到的题目线索：${snippet}${message.length > 80 ? '…' : ''}` : '',
+    '',
+    '## 1. 可能的知识漏洞',
+    '',
+    '- 概念定义记混（条件 / 结论谁推谁）',
+    '- 公式适用前提没核对',
+    '- 计算步骤跳步导致符号或单位出错',
+    '',
+    '## 2. 分步引导（先想再算）',
+    '',
+    '1. **题干在问什么？** 用一句话复述目标量。',
+    '2. **已知条件有哪些？** 列出可直接用的量和隐含条件。',
+    '3. **选哪条关系？** 说出公式或定理名称，并检查前提是否满足。',
+    '4. **只算关键一步**，对照单位 / 符号是否合理。',
+    '',
+    '## 3. 小检查',
+    '',
+    '请先回答：你卡在第几步？把你目前写到的式子发我，我再针对那一步讲。',
+    '',
+    '> 💡 这是教育向 mock 演示：有 DeepSeek Key 时，非演示关键词会走真模型。',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  yield* generateTextEvents(reply);
+  yield { type: 'thinking', data: { stage: 'done', message: '讲解引导已生成' } };
+  yield { type: 'done', data: null };
+}
+
+/** 教育向：同类练习推荐 */
+function* generatePracticeRecommendFlow(message: string): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在匹配相近考点...' } };
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在生成由易到难的练习...' } };
+
+  const topicHint = /主题[:：]\s*(.+)$/m.exec(message)?.[1]?.trim() || '常见初中考点';
+  const reply = [
+    `好的，围绕「**${topicHint}**」给你 3 道同类练习（由易到难）。每题含考查点与简要提示，不堆裸题。`,
+    '',
+    '### 练习 1（基础）',
+    '',
+    '- **考查点：** 核心定义 / 直接套公式',
+    '- **题干：** 已知基本量，求一个直接结果。',
+    '- **提示：** 先写出定义式，再代入数字，核对单位。',
+    '',
+    '### 练习 2（进阶）',
+    '',
+    '- **考查点：** 条件筛选 + 一步变形',
+    '- **题干：** 条件略多，需要排除无关信息后再算。',
+    '- **提示：** 先划掉用不上的条件，再选关系式。',
+    '',
+    '### 练习 3（综合）',
+    '',
+    '- **考查点：** 多步推理 / 易错点对照',
+    '- **题干：** 需要两步以上推导，中间有一个常见陷阱。',
+    '- **提示：** 每步只推一个结论；算完用特例或量级粗验。',
+    '',
+    '> 把其中一题的解题过程发我，我可以按「错题讲解」路径继续带你过。',
+  ].join('\n');
+
+  yield* generateTextEvents(reply);
+  yield { type: 'thinking', data: { stage: 'done', message: '练习推荐完成' } };
+  yield { type: 'done', data: null };
+}
+
+/** 教育向：通俗改写讲解 */
+function* generateSimplifyExplainFlow(message: string): Generator<SSEEvent> {
+  yield { type: 'thinking', data: { stage: 'analyzing', message: '正在提取原文要点...' } };
+  yield { type: 'thinking', data: { stage: 'generating', message: '正在改写成生活化讲解...' } };
+
+  const raw = message.split(/原文[:：]/)[1]?.trim() || message.slice(0, 120);
+  const reply = [
+    '我把内容改成**初中生也能听懂**的版本：先打比方，再分步骤，最后留一道小练习。',
+    '',
+    '### 生活化例子',
+    '',
+    '把它想成「先把材料摆齐，再按说明书一步一步装」——先弄清已知，再套关系，最后检查结果像不像那么回事。',
+    '',
+    '### 分步讲解',
+    '',
+    '1. **用自己的话说目标**：这题最终要得到什么。',
+    '2. **列出已知**：数字、条件、限制。',
+    '3. **选工具**：用哪个公式 / 定理，为什么能用。',
+    '4. **算一步、看一步**：每步都问「单位对吗？符号合理吗？」',
+    '',
+    raw
+      ? `### 对照你的原文（摘录）\n\n> ${raw.slice(0, 160)}${raw.length > 160 ? '…' : ''}\n`
+      : '',
+    '### 小练习巩固',
+    '',
+    '请用三句话复述：①目标 ②用了哪条关系 ③结果怎么自检。发我后我帮你核对是否漏前提。',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  yield* generateTextEvents(reply);
+  yield { type: 'thinking', data: { stage: 'done', message: '通俗讲解已生成' } };
+  yield { type: 'done', data: null };
+}
 
 /** 合法 mermaid 流程图演示（供前端 MermaidBlock 自测） */
 function* generateMermaidFlow(): Generator<SSEEvent> {

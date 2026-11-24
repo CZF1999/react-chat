@@ -1000,4 +1000,4 @@ pnpm dev
 
 ---
 
-*文档版本：与仓库当前 AI 对话实现同步。更短的面试叙事与追问清单见完整学习文档；Store 层 3 分钟口述与 pause/resume 追问见 [`useChatStore-面试讲解.md`](./useChatStore-面试讲解.md)。*
+*文档版本：与仓库当前 AI 对话实现同步。更短的面试叙事与追问清单见完整学习文档；Store 层 3 分钟口述与 pause/resume 追问见 [`useChatStore-面试讲解.md`](./useChatStore-面试讲解.md)；从点击发送到出字的全时间线见 [`发消息全链路-面试口述.md`](./发消息全链路-面试口述.md)。*

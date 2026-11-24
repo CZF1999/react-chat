@@ -137,7 +137,10 @@ const ChatPanel: React.FC = () => {
         <div className="sbsjjc-chat__empty">
           <p>👋 选择一个会话或创建新会话开始对话</p>
           <p className="sbsjjc-chat__empty-hint">
-            支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表 · 流程图
+            面向学习场景：错题讲解 · 同类练习 · 通俗改写
+          </p>
+          <p className="sbsjjc-chat__empty-hint">
+            也支持 Markdown · 表格 · 图表 · 流程图
           </p>
         </div>
       </div>
@@ -167,9 +170,9 @@ const ChatPanel: React.FC = () => {
           </div>
         ) : messages.length === 0 ? (
           <div className="sbsjjc-chat__empty">
-            <p>👋 发送一条消息开始对话</p>
+            <p>👋 从学习意图开始，或直接输入问题</p>
             <p className="sbsjjc-chat__empty-hint">
-              支持 Markdown · 代码高亮 · LaTeX · 表格 · 图表 · 流程图
+              推荐：错题讲解 · 同类练习 · 通俗改写（点下方填入 Prompt，改完再发送）
             </p>
             <div className="sbsjjc-chat__quick-actions">
               {QUICK_ACTIONS.map((action) => (
@@ -185,7 +188,7 @@ const ChatPanel: React.FC = () => {
               ))}
             </div>
             <p className="sbsjjc-chat__empty-hint" style={{ marginTop: 12 }}>
-              演示结构化流：发送 <b>"分析销售数据"</b>
+              技术演示：发送 <b>分析销售数据</b> 或 <b>mermaid</b>
             </p>
           </div>
         ) : (

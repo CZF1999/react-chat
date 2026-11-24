@@ -5,6 +5,7 @@
 > **文档分工：**  
 > - 先讲「流怎么读」→ [`src/hooks/useStreamMessage.ts`](./src/hooks/useStreamMessage.ts)（教学 Hook，协议内核相同；可对照本文第 5.3 节）  
 > - 本文讲「多会话产品态怎么管」→ Zustand Store（会话 CRUD、contentBlocks、节流、暂停续传、断线重试）  
+> - **按时间线讲点发送之后代码怎么跑** → [`发消息全链路-面试口述.md`](./发消息全链路-面试口述.md)  
 > - 端到端全景 / 简历话术 → [`AI对话功能-完整学习文档.md`](./AI对话功能-完整学习文档.md)  
 > - 按功能点跟代码走 → [`AI对话功能-代码详解.md`](./AI对话功能-代码详解.md)
 
